@@ -446,7 +446,7 @@ test('keeps every visible desktop footer child within the 24px footer', async ()
 test('keeps every mobile match and dialog action at least 44px tall', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
   const mobile = css.match(/@media \(max-width: 720px\)\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
-  for (const selector of ['.context-actions button', '.dialog-heading button', '.tool-actions button', '.terminal-fallback button', '.promotion-actions button', '#promotion-dialog > form > .text-button']) {
+  for (const selector of ['.context-actions button', '.dialog-heading button', '.tool-actions button', '.terminal-fallback button', '.promotion-actions button', '#promotion-dialog > form > .text-button', '#match-tools-dialog summary', '#new-match-button', '.move-row button']) {
     assert.match(mobile, new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.match(mobile, /min-height:\s*44px/);
