@@ -2,6 +2,103 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MatchSession } from '../src/match.js';
 
+const publicHumanEngineConfig = {
+  mode: 'exhibition', visibility: 'public', clock: { kind: 'none' },
+  seats: {
+    white: { kind: 'human', name: 'Human' },
+    black: { kind: 'engine', name: 'Engine' },
+  },
+};
+
+test('creates active turn for human seat and rejects wrong color', () => {
+  const match = new MatchSession(publicHumanEngineConfig);
+  const turn = match.createTurnPayload();
+
+  assert.equal(turn.activeColor, 'white');
+  assert.equal(turn.seatKind, 'human');
+  assert.throws(
+    () => match.submitSeatMove({ color: 'black', turnId: turn.turnId, moveUci: 'e2e4' }),
+    /SEAT_NOT_ACTIVE/
+  );
+});
+
+test('alternates human and agent seats through one authoritative path', () => {
+  const match = new MatchSession({
+    mode: 'exhibition', visibility: 'public', clock: { kind: 'none' },
+    seats: {
+      white: { kind: 'human', name: 'Human' },
+      black: { kind: 'agent', name: 'Agent', traceRequirement: 'structured_required' },
+    },
+  });
+
+  const white = match.createTurnPayload();
+  match.submitSeatMove({ color: 'white', turnId: white.turnId, moveUci: 'e2e4' });
+  const black = match.createTurnPayload();
+
+  assert.equal(black.activeColor, 'black');
+  assert.equal(black.seatKind, 'agent');
+});
+
+test('rejects stale generic turns after a seat move', () => {
+  const match = new MatchSession(publicHumanEngineConfig);
+  const turn = match.createTurnPayload();
+  match.submitSeatMove({ color: 'white', turnId: turn.turnId, moveUci: 'e2e4' });
+
+  assert.throws(
+    () => match.submitSeatMove({ color: 'white', turnId: turn.turnId, moveUci: 'd2d4' }),
+    /STALE_TURN/
+  );
+});
+
+test('resignation completes a match once and is idempotent', () => {
+  const match = new MatchSession(publicHumanEngineConfig);
+  match.createTurnPayload();
+
+  const first = match.resign('white');
+  const second = match.resign('white');
+
+  assert.equal(first.result, '0-1');
+  assert.deepEqual(second, first);
+  assert.equal(match.snapshot().status, 'completed');
+  assert.equal(match.snapshot().termination, 'resignation');
+  assert.equal(match.isTerminal(), true);
+});
+
+test('aborts only before first move', () => {
+  const match = new MatchSession(publicHumanEngineConfig);
+  assert.equal(match.abort('white').status, 'aborted');
+
+  const started = new MatchSession(publicHumanEngineConfig);
+  const turn = started.createTurnPayload();
+  started.submitSeatMove({ color: 'white', turnId: turn.turnId, moveUci: 'e2e4' });
+  assert.throws(() => started.abort('black'), /ABORT_NOT_ALLOWED/);
+});
+
+test('public snapshot exposes generic seats without controller state', () => {
+  const match = new MatchSession(publicHumanEngineConfig);
+  const snapshot = match.snapshot();
+
+  assert.deepEqual(snapshot.seats, publicHumanEngineConfig.seats);
+  assert.equal(snapshot.mode, 'exhibition');
+  assert.equal(snapshot.visibility, 'public');
+  assert.equal('agentColor' in snapshot, false);
+  assert.equal('currentTurnId' in snapshot, false);
+});
+
+test('exports config, PGN, and activity without internal controller fields', () => {
+  const match = new MatchSession(publicHumanEngineConfig);
+  const turn = match.createTurnPayload();
+  match.submitSeatMove({ color: 'white', turnId: turn.turnId, moveUci: 'e2e4' });
+
+  const record = match.exportRecord();
+
+  assert.deepEqual(record.config.seats, publicHumanEngineConfig.seats);
+  assert.match(record.pgn, /\[White "Human"\]/);
+  assert.ok(record.activity.some((entry) => entry.type === 'move.submit'));
+  assert.equal('currentTurnId' in record, false);
+  assert.equal('currentTurnPayload' in record, false);
+});
+
 test('locked matches reject steering', () => {
   const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
   assert.throws(() => match.queueSteering('Play aggressively'), /STEERING_LOCKED/);

@@ -22,6 +22,19 @@ test('applies a legal UCI move and records history', () => {
   assert.equal(game.snapshot().turn, 'black');
 });
 
+test('records copied FEN history and check state for replay', () => {
+  const game = new AgentChessGame();
+  const initial = game.snapshot();
+  game.applyMove('e2e4');
+  const afterMove = game.snapshot();
+
+  assert.deepEqual(initial.positions, [initial.fen]);
+  assert.deepEqual(afterMove.positions, [initial.fen, afterMove.fen]);
+  afterMove.positions.push('mutated');
+  assert.equal(game.snapshot().positions.includes('mutated'), false);
+  assert.equal(afterMove.inCheck, false);
+});
+
 test('rejects illegal UCI moves without changing state', () => {
   const game = new AgentChessGame();
   const before = game.snapshot().fen;

@@ -1,30 +1,30 @@
 import { randomUUID } from 'node:crypto';
 import { AgentChessGame } from './game.js';
+import { normalizeMatchConfig, publicSeat } from './seats.js';
 
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 
 export class MatchSession {
-  constructor({
-    id = randomUUID(),
-    steeringMode = 'locked',
-    agentColor = 'white',
-    agentName = 'Agent',
-    opponentName = 'Stockfish',
-  } = {}) {
-    if (!['locked', 'trainer'].includes(steeringMode)) {
-      throw new Error(`INVALID_STEERING_MODE: ${steeringMode}`);
-    }
-    if (!['white', 'black'].includes(agentColor)) {
-      throw new Error(`INVALID_AGENT_COLOR: ${agentColor}`);
-    }
+  constructor(input = {}) {
+    const { id = randomUUID() } = input;
+    const config = normalizeMatchConfig(input);
 
     this.id = id;
-    this.steeringMode = steeringMode;
-    this.agentColor = agentColor;
+    this.mode = config.mode;
+    this.visibility = config.visibility;
+    this.seats = structuredClone(config.seats);
+    this.clock = structuredClone(config.clock);
+    this.engine = structuredClone(config.engine);
+    this.compatibility = structuredClone(config.compatibility);
+    this.steeringMode = config.steeringMode;
+    this.agentColor = this.compatibility?.legacyAgentColor ?? null;
     this.game = new AgentChessGame({
-      white: agentColor === 'white' ? agentName : opponentName,
-      black: agentColor === 'black' ? agentName : opponentName,
+      white: this.seats.white.name,
+      black: this.seats.black.name,
     });
+    this.status = 'waiting';
+    this.termination = null;
+    this.resultOverride = null;
     this.pendingGuidance = null;
     this.currentTurnId = null;
     this.currentTurnPayload = null;
@@ -35,7 +35,25 @@ export class MatchSession {
   }
 
   isAgentTurn() {
-    return !this.game.snapshot().gameOver && this.game.snapshot().turn === this.agentColor;
+    return !this.isTerminal() && this.activeSeat().kind === 'agent';
+  }
+
+  activeSeat() {
+    const color = this.game.snapshot().turn;
+    return { ...this.seats[color], color };
+  }
+
+  activeTurn() {
+    return this.currentTurnPayload;
+  }
+
+  isTerminal() {
+    return ['completed', 'aborted', 'failed'].includes(this.status) || this.game.snapshot().gameOver;
+  }
+
+  start() {
+    if (this.status === 'waiting') this.status = 'active';
+    return this.status;
   }
 
   publishTrace({ turnId, kind = 'status', phase = 'thinking', summary, candidates, selectedMove = null } = {}) {
@@ -68,20 +86,25 @@ export class MatchSession {
   }
 
   createTurnPayload() {
-    if (!this.isAgentTurn()) throw new Error('NOT_AGENT_TURN');
+    if (this.isTerminal()) throw new Error('GAME_OVER');
+    this.start();
     if (this.currentTurnPayload) return this.currentTurnPayload;
     this.currentTurnId = randomUUID();
 
     const guidance = this.pendingGuidance;
     this.pendingGuidance = null;
 
+    const seat = this.activeSeat();
     const turn = this.currentTurnPayload = this.game.buildTurnSnapshot({
       gameId: this.id,
       turnId: this.currentTurnId,
-      agentColor: this.agentColor,
+      agentColor: seat.color,
       steering: { mode: this.steeringMode, guidance },
       deadline: null,
     });
+    turn.activeColor = seat.color;
+    turn.seatKind = seat.kind;
+    turn.mode = this.mode;
     this._recordActivity({
       type: 'turn.start',
       source: 'system',
@@ -99,37 +122,74 @@ export class MatchSession {
   }
 
   submitAgentMove({ turnId, moveUci }) {
+    const seat = this.activeSeat();
+    if (turnId !== this.currentTurnId || this.closedTurnIds.has(turnId)) {
+      return this.submitSeatMove({ color: this.agentColor ?? seat.color, turnId, moveUci });
+    }
+    if (seat.kind !== 'agent') throw new Error('NOT_AGENT_TURN');
+    return this.submitSeatMove({ color: seat.color, turnId, moveUci });
+  }
+
+  submitOpponentMove(moveUci) {
+    const seat = this.activeSeat();
+    if (seat.kind === 'agent') throw new Error('NOT_OPPONENT_TURN');
+    const pendingGuidance = this.pendingGuidance;
+    const turn = this.createTurnPayload();
+    const applied = this.submitSeatMove({ color: seat.color, turnId: turn.turnId, moveUci });
+    this.pendingGuidance = pendingGuidance;
+    return applied;
+  }
+
+  submitSeatMove({ color, turnId, moveUci, publicTrace } = {}) {
     this._assertActiveTurn(turnId);
+    const seat = this.activeSeat();
+    if (color !== seat.color) throw new Error('SEAT_NOT_ACTIVE');
+    if (seat.traceRequirement === 'structured_required' && !publicTrace) {
+      throw new Error('TRACE_REQUIRED');
+    }
+    if (publicTrace) this.publishTrace({ turnId, ...publicTrace });
 
     const applied = this.game.applyMove(moveUci);
     this.closedTurnIds.add(turnId);
     this.currentTurnId = null;
     this.currentTurnPayload = null;
-    this.trace.push({ type: 'agent.move', at: new Date().toISOString(), ...applied });
+    this.trace.push({ type: `${seat.kind}.move`, at: new Date().toISOString(), ...applied });
     this._recordActivity({
-      type: 'move.submit',
-      source: 'system',
-      phase: 'submit',
-      turnId,
-      summary: `Submitted ${applied.uci}`,
-      selectedMove: applied.uci,
+      type: 'move.submit', source: 'system', phase: 'submit', turnId,
+      summary: `Submitted ${applied.uci}`, selectedMove: applied.uci,
     });
     return applied;
   }
 
-  submitOpponentMove(moveUci) {
-    if (this.game.snapshot().gameOver) throw new Error('GAME_OVER');
-    if (this.game.snapshot().turn === this.agentColor) throw new Error('NOT_OPPONENT_TURN');
-    const applied = this.game.applyMove(moveUci);
-    this.trace.push({ type: 'opponent.move', at: new Date().toISOString(), ...applied });
-    this._recordActivity({
-      type: 'opponent.move',
-      source: 'system',
-      phase: 'observe',
-      summary: `Opponent played ${applied.uci}`,
-      selectedMove: applied.uci,
-    });
-    return applied;
+  resign(color) {
+    if (this.isTerminal()) return this._completion();
+    if (!['white', 'black'].includes(color)) throw new Error('INVALID_COLOR');
+    this.resultOverride = color === 'white' ? '0-1' : '1-0';
+    this.status = 'completed';
+    this.termination = 'resignation';
+    this._closeActiveTurn();
+    this._recordActivity({ type: 'match.resign', source: 'system', phase: 'complete', summary: `${color} resigned` });
+    return this._completion();
+  }
+
+  abort(color) {
+    if (this.isTerminal()) return this._completion();
+    if (!['white', 'black'].includes(color)) throw new Error('INVALID_COLOR');
+    if (this.game.snapshot().ply > 0) throw new Error('ABORT_NOT_ALLOWED');
+    this.status = 'aborted';
+    this.termination = 'aborted';
+    this._closeActiveTurn();
+    this._recordActivity({ type: 'match.abort', source: 'system', phase: 'complete', summary: `${color} aborted` });
+    return this._completion();
+  }
+
+  fail(code, message) {
+    if (this.isTerminal()) return this._completion();
+    this.status = 'failed';
+    this.termination = 'failure';
+    this._closeActiveTurn();
+    this._recordActivity({ type: 'match.fail', source: 'system', phase: 'failed', summary: `${code}: ${message}` });
+    return this._completion();
   }
 
   listMovesForPiece({ turnId, square }) {
@@ -196,18 +256,44 @@ export class MatchSession {
   }
 
   snapshot() {
-    return {
+    const game = { ...this.game.snapshot(), result: this.resultOverride ?? this.game.result() };
+    const snapshot = {
       id: this.id,
+      mode: this.mode,
+      visibility: this.visibility,
+      seats: Object.fromEntries(Object.entries(this.seats).map(([color, seat]) => [color, publicSeat(seat)])),
+      clock: structuredClone(this.clock),
+      status: this.status,
+      termination: this.termination,
       steeringMode: this.steeringMode,
-      agentColor: this.agentColor,
       createdAt: this.createdAt,
       trace: [...this.trace],
       activity: this.activity.map((entry) => ({
         ...entry,
         candidates: entry.candidates.map((candidate) => ({ ...candidate })),
       })),
-      game: this.game.snapshot(),
+      game,
       pgn: this.game.pgn(),
+    };
+    if (this.compatibility) snapshot.agentColor = this.agentColor;
+    return snapshot;
+  }
+
+  exportRecord() {
+    return {
+      id: this.id,
+      config: {
+        mode: this.mode, visibility: this.visibility,
+        seats: Object.fromEntries(Object.entries(this.seats).map(([color, seat]) => [color, publicSeat(seat)])),
+        clock: structuredClone(this.clock), steeringMode: this.steeringMode,
+        engine: structuredClone(this.engine), compatibility: structuredClone(this.compatibility),
+      },
+      status: this.status,
+      termination: this.termination,
+      result: this.resultOverride ?? this.game.result(),
+      pgn: this.game.pgn(),
+      activity: this.snapshot().activity,
+      positions: this.game.snapshot().positions,
     };
   }
 
@@ -215,7 +301,21 @@ export class MatchSession {
     if (!turnId || turnId !== this.currentTurnId || this.closedTurnIds.has(turnId)) {
       throw new Error('STALE_TURN');
     }
-    if (!this.isAgentTurn()) throw new Error('NOT_AGENT_TURN');
+    if (this.isTerminal()) throw new Error('GAME_OVER');
+  }
+
+  _closeActiveTurn() {
+    if (this.currentTurnId) this.closedTurnIds.add(this.currentTurnId);
+    this.currentTurnId = null;
+    this.currentTurnPayload = null;
+  }
+
+  _completion() {
+    return {
+      status: this.status,
+      termination: this.termination,
+      result: this.resultOverride ?? this.game.result(),
+    };
   }
 
   _assertTraceMoves({ candidates, selectedMove }) {

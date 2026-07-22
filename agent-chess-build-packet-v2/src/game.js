@@ -30,6 +30,7 @@ export class AgentChessGame {
     this.chess = new Chess(fen);
     this.movesUci = [];
     this.initialFen = fen ?? new Chess().fen();
+    this.positions = [this.chess.fen({ forceEnpassantSquare: true })];
     this.chess.header('White', white, 'Black', black, 'Event', 'Agent Chess');
   }
 
@@ -117,6 +118,7 @@ export class AgentChessGame {
 
     const move = this.chess.move(parseUci(uci));
     this.movesUci.push(uci);
+    this.positions.push(this.chess.fen({ forceEnpassantSquare: true }));
     return {
       uci,
       san: move.san,
@@ -134,7 +136,9 @@ export class AgentChessGame {
       ply: this.movesUci.length,
       movesUci: [...this.movesUci],
       movesSan: this.chess.history(),
+      positions: [...this.positions],
       legalMoves: this.legalMoves(),
+      inCheck: this.chess.isCheck(),
       gameOver: this.chess.isGameOver(),
       checkmate: this.chess.isCheckmate(),
       draw: this.chess.isDraw(),
