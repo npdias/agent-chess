@@ -10,5 +10,6 @@ Task 6: complete (commits 3ebf50c..9570b97, review clean).
 Task 7: complete (commits 9570b97..7c202b8, review clean).
 Task 8: complete (commits 7c202b8..4e88b96, automated review clean).
 Visual acceptance: complete at 97b31e2; desktop board bands align, board-to-rail gap is 16px, outer margins are symmetric, rail/footer bottoms differ by 1px, and activity fills available rail height. Board sizes: 610x610 at 1440x900, 510x510 at 1280x800, 710x710 at 1440x1000, capped 820x820 on tall screens; mobile remains 366x366 without horizontal overflow.
-Final verification: 90/90 tests, audit clean, live six-ply smoke clean, viewport fit and spacing geometry confirmed.
-Final independent review: clean at 97b31e2; no Critical, Important, or Minor findings.
+Board rendering correction: complete at f04ac25; explicit eight-row tracks and zero square minimums prevent piece glyphs from expanding occupied rows. Screenshots at 1440x900, 1280x800, 1440x1200, and 390x844 show no dark seams, clipped ranks, clipped pieces, or horizontal overflow.
+Final verification: 91/91 tests, audit clean, live six-ply smoke clean, viewport fit, row geometry, and spacing confirmed.
+Final independent review: clean at f04ac25; no Critical, Important, or Minor findings.
