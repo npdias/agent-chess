@@ -68,10 +68,36 @@ test('public agent move requires legal matching decision trace', () => {
   assert.throws(
     () => match.submitSeatMove({
       color: 'white', turnId: turn.turnId, moveUci: 'e2e4',
+      publicTrace: { summary: 'Choose e4.', candidates: [{ uci: 'e2e4' }] },
+    }),
+    /TRACE_SELECTED_MOVE_MISMATCH/
+  );
+  assert.throws(
+    () => match.submitSeatMove({
+      color: 'white', turnId: turn.turnId, moveUci: 'e2e4',
       publicTrace: { summary: 'Choose e4.', candidates: [{ uci: 'e2e4' }], selectedMove: 'd2d4' },
     }),
     /TRACE_SELECTED_MOVE_MISMATCH/
   );
+});
+
+test('does not commit a decision trace when submitted move is illegal', () => {
+  const match = publicAgentMatch();
+  const turn = match.createTurnPayload();
+  const before = match.snapshot();
+
+  assert.throws(
+    () => match.submitSeatMove({
+      color: 'white', turnId: turn.turnId, moveUci: 'e2e5',
+      publicTrace: { summary: 'Choose e5.', candidates: [{ uci: 'e2e4' }], selectedMove: 'e2e5' },
+    }),
+    /ILLEGAL_MOVE/
+  );
+
+  const after = match.snapshot();
+  assert.equal(after.game.ply, before.game.ply);
+  assert.equal(match.activeTurn().turnId, turn.turnId);
+  assert.equal(after.activity.filter((entry) => entry.type === 'agent.decision').length, 0);
 });
 
 test('commits submitted public trace as one agent decision activity', () => {

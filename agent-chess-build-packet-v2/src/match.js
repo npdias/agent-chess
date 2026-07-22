@@ -153,6 +153,9 @@ export class MatchSession {
     for (const candidate of committedTrace?.candidates ?? []) {
       if (!this.game.validateCandidate(candidate.uci).legal) throw new Error('TRACE_CANDIDATE_NOT_LEGAL');
     }
+    if (seat.traceRequirement === 'structured_required' && committedTrace?.selectedMove !== moveUci) {
+      throw new Error('TRACE_SELECTED_MOVE_MISMATCH');
+    }
     if (committedTrace?.selectedMove && committedTrace.selectedMove !== moveUci) {
       throw new Error('TRACE_SELECTED_MOVE_MISMATCH');
     }
