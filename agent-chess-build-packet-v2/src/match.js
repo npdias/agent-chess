@@ -68,7 +68,8 @@ export class MatchSession {
 
   createTurnPayload() {
     if (!this.isAgentTurn()) throw new Error('NOT_AGENT_TURN');
-    if (!this.currentTurnId) this.currentTurnId = randomUUID();
+    const isNewTurn = !this.currentTurnId;
+    if (isNewTurn) this.currentTurnId = randomUUID();
 
     const guidance = this.pendingGuidance;
     this.pendingGuidance = null;
@@ -80,13 +81,15 @@ export class MatchSession {
       steering: { mode: this.steeringMode, guidance },
       deadline: null,
     });
-    this._recordActivity({
-      type: 'turn.start',
-      source: 'system',
-      phase: 'observe',
-      turnId: turn.turnId,
-      summary: 'Position ready',
-    });
+    if (isNewTurn) {
+      this._recordActivity({
+        type: 'turn.start',
+        source: 'system',
+        phase: 'observe',
+        turnId: turn.turnId,
+        summary: 'Position ready',
+      });
+    }
     return turn;
   }
 

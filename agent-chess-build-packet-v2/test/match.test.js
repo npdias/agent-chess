@@ -17,6 +17,16 @@ test('trainer guidance appears on the next agent turn and is consumed once', () 
   assert.equal(match.createTurnPayload().steering.guidance, null);
 });
 
+test('records turn start activity once when recreating an active turn payload', () => {
+  const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
+
+  const first = match.createTurnPayload();
+  const repeated = match.createTurnPayload();
+
+  assert.equal(repeated.turnId, first.turnId);
+  assert.equal(match.snapshot().activity.filter((entry) => entry.type === 'turn.start' && entry.turnId === first.turnId).length, 1);
+});
+
 test('rejects a move submitted for a stale turn', () => {
   const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
   const turn = match.createTurnPayload();
