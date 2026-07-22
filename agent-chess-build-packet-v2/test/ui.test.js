@@ -179,14 +179,15 @@ test('renders hostile public seat names as text in review rows', () => {
   assert.equal(nodes.at(-1).textContent, '<img src=x onerror=alert(1)>');
 });
 
-test('keeps compact status and collapsible technical activity outside match controls', async () => {
+test('keeps compact status and technical activity inside progressive match tools', async () => {
   const [html, css] = await Promise.all([
     readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
     readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
   ]);
 
   assert.match(html, /id="status-line"/);
-  assert.match(html, /<details class="panel technical-activity"/);
+  assert.match(html, /id="match-tools-dialog"/);
+  assert.match(html, /<details class="technical-activity"/);
   assert.match(html, /id="activity"/);
   assert.match(css, /\.board\s*\{[^}]*aspect-ratio:\s*1/);
   assert.match(css, /\.square\s*\{[^}]*aspect-ratio:\s*1/);
@@ -209,14 +210,13 @@ test('allows the local connector command to shrink on narrow screens', async () 
   assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.connector-actions small\s*\{[^}]*min-width:\s*0/);
 });
 
-test('centers a height-bound desktop board beside an equal-height activity rail', async () => {
+test('centers a height-bound desktop board beside a bounded three-surface rail', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
   assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*var\(--desktop-fixed-chrome\)\),\s*calc\(100vw\s*-\s*492px\)\)/);
   assert.match(css, /\.match-layout\s*\{[^}]*grid-template-columns:\s*var\(--live-board-size\)\s+minmax\(360px,\s*440px\)[^}]*justify-content:\s*center/);
   assert.match(css, /\.board-stage\s*\{[^}]*width:\s*var\(--live-board-size\)/);
-  assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*150px\)[^}]*overflow-y:\s*auto/);
-  assert.match(css, /\.technical-activity\s*\{[^}]*flex:\s*1\s+1\s+0/);
+  assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*144px\)[^}]*overflow:\s*hidden/);
 });
 
 test('caps the aligned desktop board and derives rail height from it at every desktop height', async () => {
@@ -224,7 +224,7 @@ test('caps the aligned desktop board and derives rail height from it at every de
 
   assert.match(css, /@media \(min-width: 1021px\)\s*\{[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*var\(--desktop-fixed-chrome\)\),\s*calc\(100vw\s*-\s*492px\)\)/);
   assert.doesNotMatch(css, /@media \(min-width: 1021px\) and \(max-height: 1250px\)/);
-  assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*150px\)/);
+  assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*144px\)/);
 });
 
 test('locks chess squares to eight equal grid rows without intrinsic piece overflow', async () => {
@@ -313,8 +313,8 @@ test('uses spectator-first hierarchy while preserving match controls', async () 
   ]);
   assert.match(html, /id="status-line"/);
   assert.match(html, /id="decision-brief"/);
-  assert.match(html, /<details class="panel technical-activity"/);
-  assert.match(html, /<details class="panel steering-details"/);
+  assert.match(html, /<details class="technical-activity"/);
+  assert.match(html, /<details class="steering-details"/);
   assert.match(html, /Copy agent link/);
   assert.match(html, /id="copy-agent-link"/);
   assert.match(html, /id="copy-command"/);
@@ -324,29 +324,89 @@ test('uses spectator-first hierarchy while preserving match controls', async () 
   assert.match(app, /connector\.classList\.toggle\('connected'/);
   assert.doesNotMatch(html, /id="connect-command">[^<]+ticket=/);
   assert.match(css, /--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*var\(--desktop-fixed-chrome\)\)/);
-  assert.match(css, /\.control-rail\s*\{[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.control-rail\s*\{[^}]*overflow:\s*hidden/);
   assert.match(css, /\.technical-activity/);
   assert.match(css, /@media \(max-width: 1020px\)[\s\S]*?\.control-rail\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.connector-actions button\s*\{[^}]*min-height:\s*44px/);
 });
 
-test('keeps structured agent activity visible in focus mode', async () => {
-  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
-  assert.match(css, /\.focus-mode \.control-rail \.panel:not\(\.technical-activity\):not\(\.lifecycle-panel\)/);
+test('keeps match tools available in focus mode', async () => {
+  const [html, css] = await Promise.all([
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  assert.match(html, /id="match-tools-button"/);
+  assert.doesNotMatch(css, /\.focus-mode[^}]*#match-tools-button/);
 });
 
 test('budgets full desktop board stack within a 720px viewport', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
   const chrome = Number(css.match(/--desktop-fixed-chrome:\s*(\d+)px/)?.[1]);
-  assert.equal(chrome, 260);
+  assert.equal(chrome, 300);
   assert.equal(720 - chrome + chrome <= 720, true);
   assert.match(css, /--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*var\(--desktop-fixed-chrome\)\),\s*calc\(100vw\s*-\s*492px\)\)/);
+  assert.match(css, /\.match-active,\s*\.match-active body\s*\{[^}]*height:\s*100dvh[^}]*overflow:\s*hidden/);
+  assert.match(css, /\.board-footer\s*\{[^}]*max-height:\s*24px/);
 });
 
 test('removes obsolete tab controller after native details migration', async () => {
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   assert.doesNotMatch(app, /function selectTab\(/);
   assert.doesNotMatch(app, /querySelectorAll\('\.tab'\)/);
+});
+
+test('limits default rail to onboarding decision and move history surfaces', async () => {
+  const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  const rail = html.match(/<aside class="control-rail">([\s\S]*?)<\/aside>/)?.[1] ?? '';
+  assert.match(rail, /id="connector"/);
+  assert.match(rail, /id="decision-brief"/);
+  assert.match(rail, /class="panel moves-panel"/);
+  for (const id of ['steering-form', 'activity', 'download-match', 'lifecycle-action', 'fen', 'copy-pgn']) assert.doesNotMatch(rail, new RegExp(`id="${id}"`));
+  assert.doesNotMatch(rail, /<ol id="connector-steps"/);
+});
+
+test('moves preserved secondary controls into one internally scrolling Match tools dialog', async () => {
+  const [html, app, css] = await Promise.all([
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  const dialog = html.match(/<dialog id="match-tools-dialog"[\s\S]*?<\/dialog>/)?.[0] ?? '';
+  for (const id of ['steering-form', 'activity', 'copy-pgn', 'download-match', 'lifecycle-action', 'fen', 'copy-command']) assert.match(dialog, new RegExp(`id="${id}"`));
+  assert.match(dialog, /id="close-match-tools"/);
+  assert.match(html, /How agents connect/);
+  assert.match(app, /match-tools-button.*showModal/s);
+  assert.match(app, /connector-how.*showModal/s);
+  assert.match(css, /#match-tools-dialog\s*\{[^}]*max-height:\s*calc\(100dvh\s*-\s*32px\)[^}]*overflow-y:\s*auto/);
+});
+
+test('keeps board footer compact and technical position data out of sight', async () => {
+  const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  const footer = html.match(/<div class="board-footer">([\s\S]*?)<\/div>/)?.[1] ?? '';
+  assert.match(footer, /id="material"/);
+  assert.match(footer, /id="return-live"/);
+  assert.match(footer, /id="flip-board"/);
+  assert.doesNotMatch(footer, /id="fen"|No clock|position-line/);
+});
+
+test('collapses connected onboarding to a slim status row', async () => {
+  const [app, css] = await Promise.all([
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  assert.match(app, /connector-how'\)\.hidden = Boolean\(match\.connected\)/);
+  assert.match(app, /connector-feedback'\)\.hidden = Boolean\(match\.connected\)/);
+  assert.match(css, /\.connector-card\.connected\s*\{[^}]*min-height:\s*0[^}]*padding:\s*8px 10px/);
+});
+
+test('uses Thinking Waiting and Finished player states without No clock', async () => {
+  const [html, app] = await Promise.all([
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+  ]);
+  assert.match(app, /summary\.review \? 'Finished' : match\.game\.turn === seat\.color \? 'Thinking' : 'Waiting'/);
+  assert.doesNotMatch(app, /\? 'To move' : 'No clock'/);
+  assert.doesNotMatch(html, /id="(?:top|bottom)-state" class="clock">No clock/);
 });
 
 test('keeps board squares stable while reconciling keyed pieces', async () => {

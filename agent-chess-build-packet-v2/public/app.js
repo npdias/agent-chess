@@ -488,27 +488,30 @@ function renderPlayerStrips(match, summary = deriveMatchSummary(match)) {
     qs(`${position}-kind`).textContent = seat.kindLabel;
     qs(`${position}-avatar`).className = `avatar avatar-${seat.kind}`;
     qs(`${position}-avatar`).textContent = (seat.name ?? seat.kindLabel).slice(0, 2).toUpperCase();
-    qs(`${position}-state`).textContent = summary.review ? 'Finished' : match.game.turn === seat.color ? 'To move' : 'No clock';
+    qs(`${position}-state`).textContent = summary.review ? 'Finished' : match.game.turn === seat.color ? 'Thinking' : 'Waiting';
   }
 }
 
 function render(match) {
   currentMatch = match;
   const summary = deriveMatchSummary(match);
+  document.documentElement.classList.add('match-active');
   qs('empty-state').hidden = true;
   qs('match-view').hidden = false;
   const seats = match.seats ?? {};
-  qs('connection').textContent = 'Unrated exhibition';
+  qs('connection').textContent = match.connected ? 'Agent connected' : 'Live';
   qs('connection').dataset.connected = String(match.connected);
-  qs('engine').textContent = 'Unrated exhibition';
+  qs('engine').textContent = 'Public match';
   qs('match-title').textContent = summary.review ? summary.status : `${seats.white?.name ?? 'White'} vs ${seats.black?.name ?? 'Black'}`;
   renderPlayerStrips(match, summary);
   qs('fen').textContent = match.game.fen;
   const material = materialSummary(match.game.positions?.[0] ?? match.game.fen, match.game.fen, materialPerspective(ownedControllerColor, humanColor));
-  qs('material').textContent = `Captured: ${material.captured.join(', ') || 'none'} · Material ${material.difference >= 0 ? '+' : ''}${material.difference}`;
+  const materialNode = qs('material');
+  materialNode.hidden = !material.captured.length && material.difference === 0;
+  materialNode.textContent = `Captured: ${material.captured.join(', ')} · Material ${material.difference >= 0 ? '+' : ''}${material.difference}`;
   qs('steering-form').hidden = true;
   qs('steering-locked').hidden = false;
-  qs('steering-state').textContent = 'No clock';
+  qs('steering-state').textContent = 'Locked';
   qs('status-title').textContent = summary.status;
   renderStatusLine(match);
   renderBoard(match);
@@ -520,12 +523,13 @@ function render(match) {
   const connector = qs('connector');
   connector.hidden = !ownsAgentSeat;
   connector.classList.toggle('connected', Boolean(match.connected));
-  qs('connector-title').textContent = match.connected ? 'Local agent connected' : 'Connect local agent';
-  qs('connector-steps').hidden = Boolean(match.connected);
+  qs('connector-title').textContent = match.connected ? 'Agent connected' : 'Connect local agent';
   qs('copy-agent-link').hidden = Boolean(match.connected);
   qs('copy-command').hidden = Boolean(match.connected);
+  qs('connector-how').hidden = Boolean(match.connected);
+  qs('connector-feedback').hidden = Boolean(match.connected);
   qs('connect-command').hidden = true;
-  qs('connector-feedback').textContent = match.connected ? 'Connection confirmed. Agent link no longer needed.' : 'Ticket remains private until copied.';
+  qs('connector-feedback').textContent = 'One-use link keeps credentials, prompts, and private reasoning local.';
   qs('lifecycle-action').hidden = summary.review || !humanCapability;
   qs('lifecycle-action').textContent = (match.game.movesSan?.length ?? 0) ? 'Resign' : 'Abort';
 }
@@ -552,6 +556,7 @@ async function createMatch(event) {
 async function loadMatch(matchId) {
   const response = await fetch(`/api/matches/${encodeURIComponent(matchId)}`);
   if (!response.ok) {
+    document.documentElement.classList.remove('match-active');
     qs('empty-state').hidden = false;
     qs('match-view').hidden = true;
     return;
@@ -633,6 +638,11 @@ function boot() {
     qs('skill-level').disabled = event.target.value === 'human-agent';
   });
   qs('new-match-button').addEventListener('click', () => { location.href = '/'; });
+  qs('match-tools-button').addEventListener('click', () => qs('match-tools-dialog').showModal());
+  qs('connector-how').addEventListener('click', () => {
+    qs('agent-help').open = true;
+    qs('match-tools-dialog').showModal();
+  });
   qs('flip-board').addEventListener('click', () => { boardFlipped = !boardFlipped; if (currentMatch) { renderBoard(currentMatch); renderPlayerStrips(currentMatch); } });
   async function mintAgentSession() {
     const agentColor = currentMatch && Object.entries(currentMatch.seats).find(([, seat]) => seat.kind === 'agent')?.[0];

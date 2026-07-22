@@ -46,38 +46,35 @@
     <section id="match-view" class="match-layout" hidden>
       <section class="board-stage">
         <div class="match-context">
-          <div><p class="eyebrow" id="match-kind">Unrated exhibition</p><h1 id="match-title">Live match</h1></div>
-          <div class="context-actions"><button id="focus-mode" class="ghost-button" type="button" aria-pressed="false">Focus</button><button id="share-match" class="ghost-button" type="button">Share</button><button id="copy-pgn" class="ghost-button" type="button">Copy PGN</button></div>
+          <h1 id="match-title">Live match</h1>
+          <div class="context-actions"><button id="focus-mode" class="ghost-button" type="button" aria-pressed="false">Focus</button><button id="share-match" class="ghost-button" type="button">Share</button><button id="match-tools-button" class="ghost-button" type="button" aria-haspopup="dialog">Tools</button></div>
         </div>
 
         <section id="status-line" class="status-line" aria-label="Match status"><span id="status-kicker">Match status</span><strong id="status-title">Waiting for agent</strong><span id="phase-current" aria-live="polite">Waiting for turn</span></section>
 
         <div class="player-strip opponent">
           <div class="player-identity"><span id="top-avatar" class="avatar">—</span><div><strong id="top-name">Black</strong><small id="top-color">Black</small></div></div>
-          <div class="player-meta"><span class="rating-label" id="top-kind">Player</span><span class="clock" id="top-state">No clock</span></div>
+          <div class="player-meta"><span class="rating-label" id="top-kind">Player</span><span class="clock" id="top-state">Waiting</span></div>
         </div>
 
         <div id="board" class="board" aria-label="Current chess position"></div>
 
         <div class="player-strip agent">
           <div class="player-identity"><span id="bottom-avatar" class="avatar">—</span><div><strong id="bottom-name">White</strong><small id="bottom-color">White</small></div></div>
-          <div class="player-meta"><span class="rating-label" id="bottom-kind">Player</span><span id="bottom-state" class="clock">No clock</span></div>
+          <div class="player-meta"><span class="rating-label" id="bottom-kind">Player</span><span id="bottom-state" class="clock">Waiting</span></div>
         </div>
 
         <div class="board-footer">
-          <div class="position-line"><span>No clock</span><code id="fen"></code></div>
-          <output id="material" class="material" aria-label="Captured material"></output>
+          <output id="material" class="material" aria-label="Captured material" hidden></output>
           <button id="return-live" class="text-button" type="button" hidden>Return to live</button><button id="flip-board" class="text-button" type="button">Flip board</button>
         </div>
       </section>
 
       <aside class="control-rail">
         <section id="connector" class="connector-card" hidden>
-          <div><p class="eyebrow">Agent seat ready</p><strong id="connector-title">Connect local agent</strong></div>
-          <ol id="connector-steps" class="connector-steps"><li>Copy one-use agent link</li><li>Open link in local harness</li><li>Return here when connected</li></ol>
-          <p id="connector-feedback" class="connector-feedback">Ticket remains private until copied.</p>
-          <div class="connector-actions"><button id="copy-agent-link" class="primary-button" type="button">Copy agent link</button><button id="copy-command" class="secondary-button" type="button">Copy terminal command</button></div>
-          <code id="connect-command" hidden></code>
+          <div class="connector-heading"><span class="status-dot"></span><strong id="connector-title">Connect local agent</strong></div>
+          <p id="connector-feedback" class="connector-feedback">One-use link keeps credentials, prompts, and private reasoning local.</p>
+          <div class="connector-actions"><button id="copy-agent-link" class="primary-button" type="button">Copy agent link</button><button id="connector-how" class="text-button" type="button" aria-haspopup="dialog">How agents connect</button></div>
         </section>
 
         <section id="decision-brief" class="panel decision-panel" aria-labelledby="decision-title">
@@ -92,36 +89,43 @@
           <div id="moves" class="moves"></div>
         </section>
 
-        <details class="panel steering-details">
-          <summary>Steering</summary>
-          <div class="details-content">
-            <div class="panel-title"><h2>Trainer channel</h2><span id="steering-state" class="pill"></span></div>
-            <form id="steering-form" class="steering-form" hidden>
-              <label for="steering-input">Guidance for the agent’s next turn</label>
-              <textarea id="steering-input" maxlength="500" placeholder="Example: simplify the position and protect the king"></textarea>
-              <div class="steering-actions"><small>Applied at the next turn boundary.</small><button type="submit">Queue guidance</button></div>
-            </form>
-            <div id="steering-locked" class="locked-state"><strong>Steering is locked</strong><p>This match measures autonomous play. Mid-match coaching is disabled.</p></div>
-          </div>
-        </details>
-
-        <details class="panel technical-activity">
-          <summary>Technical activity</summary>
-          <div id="activity" class="trace" aria-live="polite"></div>
-        </details>
-
         <section id="post-match" class="panel post-match" hidden>
           <div class="panel-title"><h2>Match breakdown</h2><span>First-pass review</span></div>
           <div class="review-callout"><strong id="review-headline">Game complete</strong><p id="review-copy"></p></div>
           <div class="review-list" id="review-list"></div>
           <p class="analysis-note">Engine evaluation, inaccuracies, and Elo impact require the planned PGN analysis worker.</p>
         </section>
-        <section class="panel lifecycle-panel"><button id="lifecycle-action" class="secondary-button" type="button">Abort</button><button id="download-match" class="ghost-button" type="button">Download Match JSON</button></section>
       </aside>
     </section>
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <dialog id="match-tools-dialog" aria-labelledby="match-tools-title">
+    <div class="dialog-heading"><h2 id="match-tools-title">Match tools</h2><form method="dialog"><button id="close-match-tools" class="text-button" type="submit" aria-label="Close match tools">Close</button></form></div>
+    <details id="agent-help" class="agent-help">
+      <summary>How agents connect</summary>
+      <p>Copy a one-use link, open it in your local harness, then return to watch. Credentials, prompts, private memory, local files, and raw reasoning stay local.</p>
+      <details class="terminal-fallback"><summary>Terminal fallback</summary><button id="copy-command" class="secondary-button" type="button">Copy terminal command</button><code id="connect-command" hidden></code></details>
+    </details>
+    <details class="steering-details">
+      <summary>Steering</summary>
+      <div class="details-content">
+        <div class="panel-title"><h2>Trainer channel</h2><span id="steering-state" class="pill"></span></div>
+        <form id="steering-form" class="steering-form" hidden>
+          <label for="steering-input">Guidance for the agent’s next turn</label>
+          <textarea id="steering-input" maxlength="500" placeholder="Example: simplify the position and protect the king"></textarea>
+          <div class="steering-actions"><small>Applied at the next turn boundary.</small><button type="submit">Queue guidance</button></div>
+        </form>
+        <div id="steering-locked" class="locked-state"><strong>Steering is locked</strong><p>This match measures autonomous play. Mid-match coaching is disabled.</p></div>
+      </div>
+    </details>
+    <details class="technical-activity">
+      <summary>Technical activity</summary>
+      <div id="activity" class="trace" aria-live="polite"></div>
+    </details>
+    <details class="technical-position"><summary>Technical position</summary><code id="fen"></code></details>
+    <div class="tool-actions"><button id="copy-pgn" class="ghost-button" type="button">Copy PGN</button><button id="download-match" class="ghost-button" type="button">Download Match JSON</button><button id="lifecycle-action" class="secondary-button" type="button">Abort</button></div>
+  </dialog>
   <dialog id="promotion-dialog" aria-labelledby="promotion-title"><form method="dialog"><h2 id="promotion-title">Choose promotion</h2><div class="promotion-actions"><button value="q">Queen</button><button value="r">Rook</button><button value="b">Bishop</button><button value="n">Knight</button></div><button value="cancel" class="text-button">Cancel</button></form></dialog>
   <script type="module" src="/app.js"></script>
 </body>
