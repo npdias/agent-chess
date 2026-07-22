@@ -1,8 +1,10 @@
 # Agent Chess Progressive Agent Interface Specification
 
-**Status:** Approved design direction; implementation pending  
-**Protocol target:** `2.0`  
+**Status:** Implementation in progress; Task 8 final acceptance pending
+**Protocol:** `2.0`
 **Scope:** Agent-facing chess-state and move-selection interface
+
+Implemented wire details live in [`../../protocol-2.0.md`](../../protocol-2.0.md). This document remains design/acceptance intent. Do not mark this interface implemented until Task 8 automated acceptance passes.
 
 ## 1. Objective
 
@@ -61,7 +63,7 @@ Every `turn.start` message must contain enough information for an agent to under
     "mode": "locked",
     "guidance": null
   },
-  "deadline": "2026-07-21T20:30:00Z"
+  "deadline": 30000
 }
 ```
 
@@ -87,7 +89,7 @@ The snapshot must be sufficient for initial planning:
 - `positionStatus.inCheck`: whether the agent's king is currently checked.
 - `positionStatus.movablePieces`: only friendly pieces with at least one legal move.
 - `steering`: immutable match steering mode plus any queued guidance.
-- `deadline`: turn deadline when clocks are enabled.
+- `deadline`: connector timeout hint in milliseconds, default `30000`. Current POC has no clocks or server-enforced deadline.
 
 ### Recent-move window
 
@@ -102,7 +104,7 @@ The number of recent moves is controlled by the versioned match profile:
 Rules:
 
 - The value is measured in plies, not full moves.
-- The benchmark profile must pin the value so all agents receive equivalent context.
+- Current POC emits up to 12 trailing plies.
 - `recentMoves` contains up to that many trailing plies, fewer only near game start.
 - Each entry includes `ply`, `color`, `uci`, and `san`.
 - The final entry must reproduce the move immediately preceding the current position.
@@ -155,11 +157,8 @@ The agent requests legal moves for one movable piece.
   "square": "f3",
   "piece": "knight",
   "moves": [
-    { "uci": "f3e5", "san": "Nxe5", "to": "e5" },
-    { "uci": "f3g5", "san": "Ng5", "to": "g5" },
-    { "uci": "f3d4", "san": "Nd4", "to": "d4" },
-    { "uci": "f3h4", "san": "Nh4", "to": "h4" },
-    { "uci": "f3g1", "san": "Ng1", "to": "g1" }
+    { "uci": "f3e5", "san": "Nxe5", "from": "f3", "to": "e5", "promotion": null },
+    { "uci": "f3g5", "san": "Ng5", "from": "f3", "to": "g5", "promotion": null }
   ]
 }
 ```
@@ -169,7 +168,7 @@ The agent requests legal moves for one movable piece.
 - The requested square must appear in `movablePieces` for the active turn.
 - Results are scoped to `turnId`.
 - A stale request is rejected.
-- The server may return an empty list only if the turn expired or state changed; otherwise this is a protocol error.
+- An active movable origin returns its legal moves. Stale turn or state change rejects request.
 
 ## 5. Optional move-history expansion
 
@@ -181,7 +180,7 @@ An agent may request more history when the configured recent-move window is insu
 {
   "type": "history.list",
   "turnId": "turn_01K...",
-  "beforePly": 1,
+  "beforePly": 25,
   "limit": 24
 }
 ```
@@ -268,7 +267,6 @@ Validation should normally happen inside the local runner from its cached author
 The server independently confirms that:
 
 - `turnId` is active.
-- The deadline has not passed.
 - The move is well-formed UCI notation.
 - The move is in the authoritative legal move set.
 - No move has already been accepted for the turn.
@@ -277,15 +275,12 @@ Local validation improves usability but is never trusted as the arbiter.
 
 ## 9. Check communication
 
-When the king is in check, the compact payload remains the same shape:
+When king is in check, compact payload remains same shape:
 
 ```json
 {
   "positionStatus": {
     "inCheck": true,
-    "checkingPieces": [
-      { "square": "b4", "piece": "bishop" }
-    ],
     "movablePieces": [
       { "square": "e1", "piece": "king" },
       { "square": "c2", "piece": "pawn" }
@@ -294,7 +289,7 @@ When the king is in check, the compact payload remains the same shape:
 }
 ```
 
-`checkingPieces` is optional for the first implementation but recommended because it communicates the immediate tactical constraint cheaply.
+Current POC does not send `checkingPieces`.
 
 The service does not initially enumerate every immobile piece or explain why it cannot move. That representation is noisy and requires extra pseudo-legal analysis. The actionable information is:
 
@@ -305,7 +300,7 @@ The service does not initially enumerate every immobile piece or explain why it 
 
 ## 10. Local tool surface
 
-The runner should expose the same functions through CLI and, later, MCP:
+Future runner may expose same functions through CLI/MCP. Current POC provides only `npm run connect` command adapter plus WebSocket protocol:
 
 ```text
 chess_get_position
@@ -317,21 +312,9 @@ chess_validate_move
 chess_submit_move
 ```
 
-### CLI examples
-
-```bash
-agent-chess position
-agent-chess movable
-agent-chess moves f3
-agent-chess history --limit 24
-agent-chess legal
-agent-chess validate f3e5
-agent-chess move f3e5
-```
-
 ### Intended basic-agent loop
 
-1. Call `chess_get_position` or receive `turn.start`.
+1. Receive `turn.start`.
 2. Review `fen`, `agentColor`, `sideToMove`, `recentMoves`, check state, and `movablePieces`.
 3. Request older history only when the recent window is insufficient.
 4. Probe one or more promising pieces for destination-level legal moves.
@@ -350,7 +333,7 @@ Guidance must not change chess legality. It is local agent context layered onto 
 
 ## 11. Metrics
 
-The system may record:
+Future benchmark service may record:
 
 - number of piece probes per turn;
 - whether the full legal list was requested;
@@ -367,14 +350,13 @@ Protocol `1.0` sends the complete `legalMoves` array with every turn.
 
 Protocol `2.0` uses compact turn payloads and on-demand probes.
 
-During migration, the runner may support both:
+Current POC supports protocol `2.0` only:
 
 ```text
-protocol 1.0 → consume legalMoves directly
 protocol 2.0 → cache legal set internally; expose progressive tools
 ```
 
-New benchmark profiles should use protocol `2.0` once implemented.
+Protocol `1.0` clients relying on default `legalMoves` are incompatible.
 
 ## 13. Acceptance criteria
 
