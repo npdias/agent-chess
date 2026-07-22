@@ -136,6 +136,10 @@ test('creates public agent-engine exhibition from generic controller payload wit
     assert.equal(snapshot.seats.black.traceRequirement, 'structured_required');
     assert.equal(snapshot.seats.white.kind, 'engine');
     assert.equal(JSON.stringify(snapshot).includes(created.capabilities.black), false);
+    const afterEngineWhite = await waitForPly(address, created.matchId, 1);
+    assert.equal(afterEngineWhite.game.movesUci.length, 1);
+    assert.equal(afterEngineWhite.activeTurn.seatKind, 'agent');
+    assert.equal(afterEngineWhite.activeTurn.activeColor, 'black');
   } finally {
     await server.stop();
   }

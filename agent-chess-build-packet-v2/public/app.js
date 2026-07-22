@@ -177,6 +177,10 @@ export function buildExhibitionPayload({ matchup, color, skillLevel }) {
   };
 }
 
+export function materialPerspective(ownedControllerColor, humanColor) {
+  return ownedControllerColor ?? humanColor ?? 'white';
+}
+
 export function buildReviewItem(doc, label, value) {
   const row = doc.createElement('div'); row.className = 'review-item';
   const name = doc.createElement('span'); name.textContent = label;
@@ -192,6 +196,7 @@ let eventSocket;
 let toastTimer;
 let humanCapability = null;
 let humanColor = null;
+let ownedControllerColor = null;
 let selection = { selected: null, legalTargets: [], legalMoves: [] };
 let replayPly = null;
 let pendingMove = false;
@@ -356,7 +361,7 @@ function render(match) {
   qs('match-title').textContent = summary.review ? summary.status : `${seats.white?.name ?? 'White'} vs ${seats.black?.name ?? 'Black'}`;
   renderPlayerStrips(match, summary);
   qs('fen').textContent = match.game.fen;
-  const material = materialSummary(match.game.positions?.[0] ?? match.game.fen, match.game.fen, humanColor);
+  const material = materialSummary(match.game.positions?.[0] ?? match.game.fen, match.game.fen, materialPerspective(ownedControllerColor, humanColor));
   qs('material').textContent = `Captured: ${material.captured.join(', ') || 'none'} · Material ${material.difference >= 0 ? '+' : ''}${material.difference}`;
   qs('steering-form').hidden = true;
   qs('steering-locked').hidden = false;
@@ -390,6 +395,7 @@ async function createMatch(event) {
   url.searchParams.set('match', created.matchId);
   history.replaceState(null, '', url);
   humanColor = null;
+  ownedControllerColor = null;
   capabilityStorageEntries(created.matchId, created.capabilities).forEach(([key, capability]) => sessionStorage.setItem(key, capability));
   await loadMatch(created.matchId);
 }
@@ -402,10 +408,10 @@ async function loadMatch(matchId) {
     return;
   }
   const match = await response.json();
-  const ownedColor = controllerColor(matchId, match.seats, (key) => sessionStorage.getItem(key));
-  humanColor = match.seats?.[ownedColor]?.kind === 'human' ? ownedColor : null;
+  ownedControllerColor = controllerColor(matchId, match.seats, (key) => sessionStorage.getItem(key));
+  humanColor = match.seats?.[ownedControllerColor]?.kind === 'human' ? ownedControllerColor : null;
   humanCapability = humanColor && sessionStorage.getItem(`${matchId}:capability:${humanColor}`);
-  if (ownedColor) boardFlipped = ownedColor === 'black';
+  if (ownedControllerColor) boardFlipped = ownedControllerColor === 'black';
   render(match);
   eventSocket?.close();
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';

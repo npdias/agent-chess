@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildExhibitionPayload } from '../public/app.js';
+import { buildExhibitionPayload, materialPerspective } from '../public/app.js';
 import { spawnSync } from 'node:child_process';
 import { fenToBoard, shellQuote, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
 
@@ -270,4 +270,11 @@ test('builds agent versus computer setup payload without legacy fields', () => {
     opponent: { kind: 'engine', name: 'Computer' },
     color: 'black', skillLevel: 9, movetimeMs: 150,
   });
+});
+
+test('uses owned agent color for material while keeping spectators neutral', () => {
+  assert.equal(materialPerspective('white', null), 'white');
+  assert.equal(materialPerspective('black', null), 'black');
+  assert.equal(materialPerspective(null, 'white'), 'white');
+  assert.equal(materialPerspective(null, null), 'white');
 });
