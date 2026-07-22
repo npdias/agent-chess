@@ -66,7 +66,7 @@ export class MatchSession {
     this.trace.push({ type: 'steering.queued', at: new Date().toISOString(), message: this.pendingGuidance });
   }
 
-  createTurnPayload({ deadlineMs = 30_000 } = {}) {
+  createTurnPayload() {
     if (!this.isAgentTurn()) throw new Error('NOT_AGENT_TURN');
     if (!this.currentTurnId) this.currentTurnId = randomUUID();
 
@@ -78,7 +78,7 @@ export class MatchSession {
       turnId: this.currentTurnId,
       agentColor: this.agentColor,
       steering: { mode: this.steeringMode, guidance },
-      deadline: deadlineMs,
+      deadline: null,
     });
     this._recordActivity({
       type: 'turn.start',

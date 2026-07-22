@@ -87,6 +87,7 @@ test('creates a compact protocol 2.0 turn payload', () => {
   assert.equal(turn.protocolVersion, '2.0');
   assert.equal(turn.agentColor, 'white');
   assert.equal(turn.sideToMove, 'white');
+  assert.equal(turn.deadline, null);
   assert.equal('legalMoves' in turn, false);
   assert.equal('movesUci' in turn, false);
   assert.deepEqual(turn.positionStatus.movablePieces.map((piece) => piece.square), [

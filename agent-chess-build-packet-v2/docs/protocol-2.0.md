@@ -12,7 +12,7 @@
 { "type": "match.start", "matchId": "UUID", "steeringMode": "locked", "agentColor": "white" }
 ```
 
-`turn.start` is compact. `recentMoves` contains at most 12 plies. `positionStatus.movablePieces` contains every friendly origin with at least one legal move. `deadline` is informational ISO 8601 server field; it is not a server-enforced clock. Current connector does not use wire `deadline`: it uses local `AGENT_COMMAND_TIMEOUT_MS`, then local `turn.deadlineMs`, then default `30000` milliseconds.
+`turn.start` is compact. `recentMoves` contains at most 12 plies. `positionStatus.movablePieces` contains every friendly origin with at least one legal move. POC clocks are disabled, therefore `deadline` is `null`. Future clock-enabled protocol may use an informational ISO 8601 server field; it is not a server-enforced clock. Current connector does not use wire `deadline`: it uses local `AGENT_COMMAND_TIMEOUT_MS`, then local `turn.deadlineMs`, then default `30000` milliseconds.
 
 ```json
 {
@@ -37,7 +37,7 @@
     ]
   },
   "steering": { "mode": "locked", "guidance": null },
-  "deadline": "2026-07-21T20:30:00.000Z"
+  "deadline": null
 }
 ```
 

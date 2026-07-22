@@ -72,6 +72,7 @@ test('sends a compact protocol 2.0 turn and routes probes to its authenticated s
     const turn = await messages.next( (message) => message.type === 'turn.start');
     assert.equal(turn.agentColor, 'white');
     assert.equal(turn.protocolVersion, '2.0');
+    assert.equal(turn.deadline, null);
     assert.equal('legalMoves' in turn, false);
     assert.deepEqual(turn.positionStatus.movablePieces.find((piece) => piece.square === 'e2'), {
       square: 'e2', piece: 'pawn',

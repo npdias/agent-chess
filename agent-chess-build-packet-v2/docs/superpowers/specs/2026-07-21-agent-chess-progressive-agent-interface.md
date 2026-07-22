@@ -70,7 +70,7 @@ Every `turn.start` message must contain enough information for an agent to under
     "mode": "locked",
     "guidance": null
   },
-  "deadline": "2026-07-21T20:30:00.000Z"
+  "deadline": null
 }
 ```
 
@@ -96,7 +96,7 @@ The snapshot must be sufficient for initial planning:
 - `positionStatus.inCheck`: whether the agent's king is currently checked.
 - `positionStatus.movablePieces`: only friendly pieces with at least one legal move.
 - `steering`: immutable match steering mode plus any queued guidance.
-- `deadline`: informational ISO 8601 server field. Current connector does not use wire `deadline`; command timeout uses local `AGENT_COMMAND_TIMEOUT_MS`, then local `turn.deadlineMs`, then `30000` milliseconds. Current POC has no server-enforced deadline.
+- `deadline`: `null` while POC clocks are disabled. Future clock-enabled protocol may use informational ISO 8601 server field. Current connector does not use wire `deadline`; command timeout uses local `AGENT_COMMAND_TIMEOUT_MS`, then local `turn.deadlineMs`, then `30000` milliseconds. Current POC has no server-enforced deadline.
 
 ### Recent-move window
 
