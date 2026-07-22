@@ -46,6 +46,22 @@ test('resolves random human color on server and records request', () => {
   assert.equal(config.colorSelection.resolved, 'black');
 });
 
+test('normalizes generic agent versus engine shorthand as a public exhibition', () => {
+  const config = normalizeMatchConfig({
+    mode: 'exhibition', visibility: 'public',
+    controller: { kind: 'agent', name: 'My agent' },
+    opponent: { kind: 'engine', name: 'Computer' }, color: 'random',
+    skillLevel: 12, movetimeMs: 300,
+  }, { random: () => 0.2 });
+
+  assert.equal(config.seats.white.kind, 'agent');
+  assert.equal(config.seats.white.traceRequirement, 'structured_required');
+  assert.equal(config.seats.black.kind, 'engine');
+  assert.deepEqual(config.colorSelection, { requested: 'random', resolved: 'white' });
+  assert.equal(config.compatibility, null);
+  assert.equal(config.engine.skillLevel, 12);
+});
+
 test('finds active seat for game turn', () => {
   const seats = { white: { kind: 'human' }, black: { kind: 'engine' } };
   assert.deepEqual(activeSeatFor('w', seats), { kind: 'human', color: 'white' });

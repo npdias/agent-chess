@@ -25,7 +25,7 @@
     <section id="empty-state" class="setup-shell">
       <div class="setup-copy">
         <p class="eyebrow">Exhibition board</p>
-        <h1>Play a private human exhibition.</h1>
+        <h1>Run a public exhibition.</h1>
         <p>This service owns board state, validates every move, runs computer opponents, and records the match.</p>
         <div class="feature-strip">
           <span>Legal move validation</span><span>Stored structured trace summaries</span><span>Optional trainer steering</span>
@@ -34,10 +34,10 @@
       <form id="create-match" class="setup-card">
         <div class="form-heading"><div><p class="eyebrow">Create exhibition</p><h2>New match</h2></div><span class="pill">Unrated exhibition</span></div>
         <div class="field-row">
-          <label>Opponent<select name="opponentKind"><option value="engine">Computer</option><option value="agent">My agent</option></select></label>
-          <label>Play as<select name="humanColor"><option value="white">White</option><option value="black">Black</option><option value="random">Random</option></select></label>
+          <label>Matchup<select id="matchup" name="matchup"><option value="human-engine">Human vs Computer</option><option value="human-agent">Human vs My agent</option><option value="agent-engine">My agent vs Computer</option></select></label>
+          <label id="color-label">Play as<select name="humanColor"><option value="white">White</option><option value="black">Black</option><option value="random">Random</option></select></label>
         </div>
-        <label class="range-label"><span>Stockfish skill <output id="skill-output">5</output></span><input id="skill-level" name="skillLevel" type="range" min="0" max="20" value="5"></label>
+        <label id="engine-skill" class="range-label"><span>Stockfish skill <output id="skill-output">5</output></span><input id="skill-level" name="skillLevel" type="range" min="0" max="20" value="5"></label>
         <button class="primary-button" type="submit">Create match</button>
         <p class="form-note">No model key is requested or stored.</p>
       </form>

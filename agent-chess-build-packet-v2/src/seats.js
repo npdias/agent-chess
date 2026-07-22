@@ -21,7 +21,7 @@ function shorthandSeats(body, random) {
 
   return {
     seats: {
-      [resolved]: cleanSeat({ kind: 'human', ...body.human }, 'Human'),
+      [resolved]: cleanSeat(body.controller ?? { kind: 'human', ...body.human }, 'Human'),
       [resolved === 'white' ? 'black' : 'white']: cleanSeat(body.opponent, 'Opponent'),
     },
     colorSelection: { requested, resolved },
@@ -58,7 +58,7 @@ export function validateSeatCombination(config) {
 }
 
 export function normalizeMatchConfig(body = {}, { random = Math.random } = {}) {
-  const shorthand = !body.seats && body.human && body.opponent;
+  const shorthand = !body.seats && body.opponent && (body.human || body.controller);
   const legacy = !body.seats && !shorthand;
   const agentColor = body.agentColor === 'black' ? 'black' : 'white';
   const shorthandConfig = shorthand ? shorthandSeats(body, random) : null;

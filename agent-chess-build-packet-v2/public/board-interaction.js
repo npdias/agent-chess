@@ -111,7 +111,7 @@ export function materialSummary(initialFen, currentFen, perspective = 'white') {
 }
 
 export function controllerColor(matchId, seats = {}, getCapability) {
-  return Object.entries(seats).find(([color, seat]) => seat.kind === 'human' && getCapability(`${matchId}:capability:${color}`))?.[0] ?? null;
+  return Object.entries(seats).find(([color, seat]) => ['human', 'agent'].includes(seat.kind) && getCapability(`${matchId}:capability:${color}`))?.[0] ?? null;
 }
 
 export function consumeSuppressedClick(suppressed) {

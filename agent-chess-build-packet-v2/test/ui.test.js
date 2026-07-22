@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { buildExhibitionPayload } from '../public/app.js';
 import { spawnSync } from 'node:child_process';
 import { fenToBoard, shellQuote, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
 
@@ -233,15 +234,18 @@ test('locks chess squares to eight equal grid rows without intrinsic piece overf
   assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.piece\s*\{[^}]*font-size:\s*min\(5rem,\s*calc\(var\(--live-board-size\)\s*\/\s*10\)\)/);
 });
 
-test('defines generic unrated human exhibition controls without capability leakage', async () => {
+test('defines generic exhibition controls without capability leakage', async () => {
   const [html, app, css] = await Promise.all([
     readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
     readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
     readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
   ]);
 
-  assert.match(html, /name="opponentKind"/);
+  assert.match(html, /name="matchup"/);
   assert.match(html, /name="humanColor"/);
+  assert.match(html, /Human vs Computer/);
+  assert.match(html, /My agent vs Computer/);
+  assert.match(app, /Agent plays as/);
   assert.match(html, /Unrated exhibition/);
   assert.match(html, /id="promotion-dialog"/);
   assert.match(html, /id="share-match"/);
@@ -250,10 +254,20 @@ test('defines generic unrated human exhibition controls without capability leaka
   assert.match(html, /id="lifecycle-action"/);
   assert.doesNotMatch(html, /id="seat-token"/);
   assert.match(app, /sessionStorage\.setItem/);
+  assert.match(app, /buildExhibitionPayload/);
+  assert.match(app, /controller: \{ kind: agent \? 'agent' : 'human'/);
   assert.match(app, /human-moves/);
   assert.match(app, /legal-target/);
   assert.match(app, /legal-capture/);
   assert.match(app, /document\.createElement\('button'\)/);
   assert.match(css, /\.board\s*\{[^}]*grid-template-columns:\s*repeat\(8/);
   assert.match(css, /\.board\s*\{[^}]*grid-template-rows:\s*repeat\(8/);
+});
+
+test('builds agent versus computer setup payload without legacy fields', () => {
+  assert.deepEqual(buildExhibitionPayload({ matchup: 'agent-engine', color: 'black', skillLevel: '9' }), {
+    controller: { kind: 'agent', name: 'My agent' },
+    opponent: { kind: 'engine', name: 'Computer' },
+    color: 'black', skillLevel: 9, movetimeMs: 150,
+  });
 });

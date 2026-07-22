@@ -186,9 +186,10 @@ test('maps each SAN replay button to its exact ply', () => {
   assert.equal(replayPlyForMove(2, 'black'), 6);
 });
 
-test('does not give a spectator human controls without a private capability', () => {
+test('finds owned human or agent controller only from a private capability', () => {
   assert.equal(controllerColor('m', { white: { kind: 'human' } }, () => null), null);
   assert.equal(controllerColor('m', { white: { kind: 'human' } }, () => 'private'), 'white');
+  assert.equal(controllerColor('m', { black: { kind: 'agent' } }, () => 'private'), 'black');
 });
 
 test('counts promotion material from current totals', () => {

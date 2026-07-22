@@ -121,6 +121,26 @@ test('human White move is authenticated and followed by engine move', async () =
   }
 });
 
+test('creates public agent-engine exhibition from generic controller payload without leaking capability', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      controller: { kind: 'agent', name: 'My agent' },
+      opponent: { kind: 'engine', name: 'Computer' }, color: 'black',
+      skillLevel: 7, movetimeMs: 150,
+    });
+    assert.match(created.capabilities.black, /.+/);
+    const snapshot = await getMatch(address, created.matchId);
+    assert.equal(snapshot.seats.black.kind, 'agent');
+    assert.equal(snapshot.seats.black.traceRequirement, 'structured_required');
+    assert.equal(snapshot.seats.white.kind, 'engine');
+    assert.equal(JSON.stringify(snapshot).includes(created.capabilities.black), false);
+  } finally {
+    await server.stop();
+  }
+});
+
 test('human smoke completes exact requested turns as White and Black', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);

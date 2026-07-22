@@ -166,6 +166,17 @@ export function deriveMatchSummary(match) {
   return deriveExhibitionSummary(match);
 }
 
+export function buildExhibitionPayload({ matchup, color, skillLevel }) {
+  const agent = matchup === 'agent-engine';
+  return {
+    controller: { kind: agent ? 'agent' : 'human', name: agent ? 'My agent' : 'Human' },
+    opponent: { kind: matchup === 'human-agent' ? 'agent' : 'engine', name: matchup === 'human-agent' ? 'My agent' : 'Computer' },
+    color,
+    skillLevel: Number(skillLevel),
+    movetimeMs: 150,
+  };
+}
+
 export function buildReviewItem(doc, label, value) {
   const row = doc.createElement('div'); row.className = 'review-item';
   const name = doc.createElement('span'); name.textContent = label;
@@ -361,7 +372,7 @@ function render(match) {
   renderTrace(match);
   renderReview(match, summary);
   qs('connector').hidden = !Object.entries(seats).some(([color, seat]) => seat.kind === 'agent' && sessionStorage.getItem(`${match.id}:capability:${color}`));
-  qs('lifecycle-action').hidden = summary.review;
+  qs('lifecycle-action').hidden = summary.review || !humanCapability;
   qs('lifecycle-action').textContent = (match.game.movesSan?.length ?? 0) ? 'Resign' : 'Abort';
 }
 
@@ -371,15 +382,14 @@ async function createMatch(event) {
   const response = await fetch('/api/matches', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ human: { kind: 'human', name: 'Human' }, opponent: { kind: form.get('opponentKind'), name: form.get('opponentKind') === 'engine' ? 'Computer' : 'My agent' }, color: form.get('humanColor'), skillLevel: Number(form.get('skillLevel')), movetimeMs: 150 }),
+    body: JSON.stringify(buildExhibitionPayload({ matchup: form.get('matchup'), color: form.get('humanColor'), skillLevel: form.get('skillLevel') })),
   });
   if (!response.ok) throw new Error(await response.text());
   const created = await response.json();
   const url = new URL(location.href);
   url.searchParams.set('match', created.matchId);
   history.replaceState(null, '', url);
-  humanColor = form.get('humanColor') === 'random' ? null : form.get('humanColor');
-  if (humanColor) boardFlipped = humanColor === 'black';
+  humanColor = null;
   capabilityStorageEntries(created.matchId, created.capabilities).forEach(([key, capability]) => sessionStorage.setItem(key, capability));
   await loadMatch(created.matchId);
 }
@@ -392,9 +402,10 @@ async function loadMatch(matchId) {
     return;
   }
   const match = await response.json();
-  humanColor = controllerColor(matchId, match.seats, (key) => sessionStorage.getItem(key));
+  const ownedColor = controllerColor(matchId, match.seats, (key) => sessionStorage.getItem(key));
+  humanColor = match.seats?.[ownedColor]?.kind === 'human' ? ownedColor : null;
   humanCapability = humanColor && sessionStorage.getItem(`${matchId}:capability:${humanColor}`);
-  if (humanCapability) boardFlipped = humanColor === 'black';
+  if (ownedColor) boardFlipped = ownedColor === 'black';
   render(match);
   eventSocket?.close();
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -465,6 +476,12 @@ function boot() {
   qs('create-match').addEventListener('submit', createMatch);
   qs('steering-form').addEventListener('submit', sendSteering);
   qs('skill-level').addEventListener('input', (event) => { qs('skill-output').value = event.target.value; });
+  qs('matchup').addEventListener('change', (event) => {
+    const agent = event.target.value === 'agent-engine';
+    qs('color-label').firstChild.textContent = agent ? 'Agent plays as' : 'Play as';
+    qs('engine-skill').hidden = event.target.value === 'human-agent';
+    qs('skill-level').disabled = event.target.value === 'human-agent';
+  });
   qs('new-match-button').addEventListener('click', () => { location.href = '/'; });
   qs('flip-board').addEventListener('click', () => { boardFlipped = !boardFlipped; if (currentMatch) { renderBoard(currentMatch); renderPlayerStrips(currentMatch); } });
   qs('copy-command').addEventListener('click', async () => {
