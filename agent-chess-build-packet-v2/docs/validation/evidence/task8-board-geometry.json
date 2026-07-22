@@ -1,0 +1,20 @@
+{
+  "method": "Playwright DOM bounding-rectangle measurement; not pixel color analysis",
+  "desktop": {
+    "viewport": [1440, 900],
+    "board": [610, 610],
+    "tracks": { "columns": 8, "rows": 8, "width": 76.25, "height": 76.25, "columnGaps": [0, 0, 0, 0, 0, 0, 0], "rowGaps": [0, 0, 0, 0, 0, 0, 0] },
+    "clipped": false,
+    "horizontalOverflow": false,
+    "scrollHeightClientHeight": [905, 900]
+  },
+  "mobile": {
+    "viewport": [390, 844],
+    "board": [366, 366],
+    "tracks": { "columns": 8, "rows": 8, "width": 45.75, "height": 45.75 },
+    "clipped": false,
+    "horizontalOverflow": false,
+    "scrollHeightClientHeight": [1899, 844]
+  },
+  "conclusion": "Geometry detects no grid gaps or overlap. It does not prove absence of visual dark seams; screenshot review remains visual evidence."
+}

@@ -1,0 +1,19 @@
+{
+  "agent": {
+    "matchId": "3ff4a676-9764-4ce1-a275-f9ca67b23ff5",
+    "plies": 12,
+    "humanMoves": 6,
+    "agentMoves": 6,
+    "observerStates": 33,
+    "acceptedDecision": true,
+    "spectatorSubmitStatus": 401,
+    "capabilityValueLeak": false,
+    "capabilityNameLeak": false,
+    "pgnPresent": true
+  },
+  "lifecycle": {
+    "abortStatus": 202,
+    "resignStatus": 202,
+    "exportStatus": 200
+  }
+}
