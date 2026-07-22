@@ -57,7 +57,6 @@ async function advanceAgent() {
       ? await runCommandAction(args.command, activeTurn)
       : chooseDemoAction(activeTurn);
     commandRounds += 1;
-    if (action.trace) publish(activeTurn.turnId, { ...action.trace, kind: 'decision' });
     if (action.probeSquare) {
       if (activeTurn.probeResults?.[action.probeSquare]) throw new Error('REPEATED_PROBE');
       socket.send(JSON.stringify(createAgentRequest(activeTurn, action)));
@@ -68,7 +67,7 @@ async function advanceAgent() {
       socket.send(JSON.stringify(createAgentRequest(activeTurn, action)));
       return;
     }
-    const candidate = validateLocalCandidate(activeTurn, action.moveUci);
+    const candidate = { ...validateLocalCandidate(activeTurn, action.moveUci), trace: action.trace };
     publish(activeTurn.turnId, { kind: 'status', phase: 'choose', summary: `Submitting ${candidate.moveUci}.` });
     socket.send(JSON.stringify(createAgentRequest(activeTurn, candidate)));
   } finally {

@@ -43,6 +43,33 @@ const REQUEST_TYPES = TURN_SCOPED_TYPES;
 const SQUARE_PATTERN = /^[a-h][1-8]$/;
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 
+export function parsePublicTrace(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_TRACE');
+  if (typeof value.summary !== 'string' || !value.summary.trim()) throw new Error('EMPTY_TRACE');
+  if (Array.isArray(value.candidates) && value.candidates.some((candidate) => (
+    typeof candidate?.uci !== 'string' || !UCI_PATTERN.test(candidate.uci)
+  ))) {
+    throw new Error(ERROR_CODES.INVALID_MOVE_FORMAT);
+  }
+  if (value.selectedMove !== undefined && value.selectedMove !== null && (
+    typeof value.selectedMove !== 'string' || !UCI_PATTERN.test(value.selectedMove)
+  )) {
+    throw new Error(ERROR_CODES.INVALID_MOVE_FORMAT);
+  }
+
+  return {
+    source: typeof value.source === 'string' && value.source.trim()
+      ? value.source.trim().slice(0, 40) : 'agent_reported',
+    phase: typeof value.phase === 'string' ? value.phase.trim().slice(0, 40) : 'thinking',
+    summary: value.summary.trim().slice(0, 500),
+    candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 3).map((candidate) => ({
+      uci: candidate.uci,
+      note: typeof candidate.note === 'string' ? candidate.note.trim().slice(0, 160) : '',
+    })) : [],
+    selectedMove: value.selectedMove ?? null,
+  };
+}
+
 export function parseClientMessage(raw) {
   let message;
   try {
@@ -75,6 +102,10 @@ export function parseClientMessage(raw) {
     parsed.moveUci = message.moveUci;
   }
 
+  if (message.type === MESSAGE_TYPES.MOVE_SUBMIT && message.publicTrace !== undefined) {
+    parsed.publicTrace = parsePublicTrace(message.publicTrace);
+  }
+
   if (message.type === MESSAGE_TYPES.HISTORY_LIST) {
     if ('beforePly' in message) {
       if (!Number.isInteger(message.beforePly)) throw new Error('INVALID_HISTORY_CURSOR');
@@ -90,22 +121,7 @@ export function parseClientMessage(raw) {
     if (typeof message.kind === 'string') {
       parsed.kind = message.kind === 'decision' ? 'decision' : 'status';
     }
-    if (typeof message.phase === 'string') parsed.phase = message.phase;
-    if (typeof message.summary === 'string') parsed.summary = message.summary;
-    if (Array.isArray(message.candidates)) {
-      if (message.candidates.some((candidate) => (
-        typeof candidate?.uci !== 'string' || !UCI_PATTERN.test(candidate.uci)
-      ))) {
-        throw new Error(ERROR_CODES.INVALID_MOVE_FORMAT);
-      }
-      parsed.candidates = message.candidates;
-    }
-    if (typeof message.selectedMove === 'string' || message.selectedMove === null) {
-      if (typeof message.selectedMove === 'string' && !UCI_PATTERN.test(message.selectedMove)) {
-        throw new Error(ERROR_CODES.INVALID_MOVE_FORMAT);
-      }
-      parsed.selectedMove = message.selectedMove;
-    }
+    Object.assign(parsed, parsePublicTrace(message));
   }
 
   return parsed;

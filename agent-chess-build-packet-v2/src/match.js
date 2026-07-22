@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { AgentChessGame } from './game.js';
+import { parsePublicTrace } from './protocol.js';
 import { normalizeMatchConfig, publicSeat } from './seats.js';
 
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
@@ -122,13 +123,13 @@ export class MatchSession {
     });
   }
 
-  submitAgentMove({ turnId, moveUci }) {
+  submitAgentMove({ turnId, moveUci, publicTrace }) {
     const seat = this.activeSeat();
     if (turnId !== this.currentTurnId || this.closedTurnIds.has(turnId)) {
-      return this.submitSeatMove({ color: this.agentColor ?? seat.color, turnId, moveUci });
+      return this.submitSeatMove({ color: this.agentColor ?? seat.color, turnId, moveUci, publicTrace });
     }
     if (seat.kind !== 'agent') throw new Error('NOT_AGENT_TURN');
-    return this.submitSeatMove({ color: seat.color, turnId, moveUci });
+    return this.submitSeatMove({ color: seat.color, turnId, moveUci, publicTrace });
   }
 
   submitOpponentMove(moveUci) {
@@ -148,9 +149,20 @@ export class MatchSession {
     if (seat.traceRequirement === 'structured_required' && !publicTrace) {
       throw new Error('TRACE_REQUIRED');
     }
-    if (publicTrace) this.publishTrace({ turnId, ...publicTrace });
+    const committedTrace = publicTrace ? parsePublicTrace(publicTrace) : null;
+    for (const candidate of committedTrace?.candidates ?? []) {
+      if (!this.game.validateCandidate(candidate.uci).legal) throw new Error('TRACE_CANDIDATE_NOT_LEGAL');
+    }
+    if (committedTrace?.selectedMove && committedTrace.selectedMove !== moveUci) {
+      throw new Error('TRACE_SELECTED_MOVE_MISMATCH');
+    }
 
     const applied = this.game.applyMove(moveUci);
+    if (committedTrace) {
+      this._recordActivity({
+        type: 'agent.decision', ...committedTrace, turnId,
+      });
+    }
     this.closedTurnIds.add(turnId);
     this.currentTurnId = null;
     this.currentTurnPayload = null;

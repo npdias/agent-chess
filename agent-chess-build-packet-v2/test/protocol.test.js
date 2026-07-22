@@ -31,6 +31,20 @@ test('rejects malformed UCI validation moves', () => {
 test('rejects malformed UCI submitted moves', () => {
   assert.throws(() => parseClientMessage('{"type":"move.submit","turnId":"t","moveUci":"e2e9"}'), /INVALID_MOVE_FORMAT/);
 });
+test('normalizes public trace attached to move submission', () => {
+  const parsed = parseClientMessage(JSON.stringify({
+    type: 'move.submit', turnId: 'turn-1', moveUci: 'e2e4',
+    publicTrace: {
+      source: 'agent_reported', phase: 'choose', summary: 'Claim center.',
+      candidates: [{ uci: 'e2e4', note: 'Opens lines.' }], selectedMove: 'e2e4',
+    },
+  }));
+
+  assert.deepEqual(parsed.publicTrace, {
+    source: 'agent_reported', phase: 'choose', summary: 'Claim center.',
+    candidates: [{ uci: 'e2e4', note: 'Opens lines.' }], selectedMove: 'e2e4',
+  });
+});
 test('normalizes valid UCI validation moves', () => {
   assert.deepEqual(parseClientMessage('{"type":"move.validate","turnId":"t","moveUci":"e2e4","ignored":true}'), {
     type: 'move.validate', turnId: 't', moveUci: 'e2e4',
@@ -56,6 +70,7 @@ test('preserves normalized turn-scoped trace fields', () => {
     type: 'trace.publish',
     turnId: 't',
     kind: 'decision',
+    source: 'agent_reported',
     phase: 'evaluate',
     summary: 'Choose e4.',
     candidates: [{ uci: 'e2e4', note: 'Claims center.' }],

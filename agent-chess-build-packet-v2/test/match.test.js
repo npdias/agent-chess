@@ -11,6 +11,16 @@ const publicHumanEngineConfig = {
   },
 };
 
+function publicAgentMatch() {
+  return new MatchSession({
+    mode: 'exhibition', visibility: 'public', clock: { kind: 'none' },
+    seats: {
+      white: { kind: 'agent', name: 'Public Agent', traceRequirement: 'structured_required' },
+      black: { kind: 'engine', name: 'Engine' },
+    },
+  });
+}
+
 test('creates active turn for human seat and rejects wrong color', () => {
   const match = new MatchSession(publicHumanEngineConfig);
   const turn = match.createTurnPayload();
@@ -38,6 +48,49 @@ test('alternates human and agent seats through one authoritative path', () => {
 
   assert.equal(black.activeColor, 'black');
   assert.equal(black.seatKind, 'agent');
+});
+
+test('public agent move requires legal matching decision trace', () => {
+  const match = publicAgentMatch();
+  const turn = match.createTurnPayload();
+
+  assert.throws(
+    () => match.submitSeatMove({ color: 'white', turnId: turn.turnId, moveUci: 'e2e4' }),
+    /TRACE_REQUIRED/
+  );
+  assert.throws(
+    () => match.submitSeatMove({
+      color: 'white', turnId: turn.turnId, moveUci: 'e2e4',
+      publicTrace: { summary: 'Choose e4.', candidates: [{ uci: 'e2e5' }], selectedMove: 'e2e4' },
+    }),
+    /TRACE_CANDIDATE_NOT_LEGAL/
+  );
+  assert.throws(
+    () => match.submitSeatMove({
+      color: 'white', turnId: turn.turnId, moveUci: 'e2e4',
+      publicTrace: { summary: 'Choose e4.', candidates: [{ uci: 'e2e4' }], selectedMove: 'd2d4' },
+    }),
+    /TRACE_SELECTED_MOVE_MISMATCH/
+  );
+});
+
+test('commits submitted public trace as one agent decision activity', () => {
+  const match = publicAgentMatch();
+  const turn = match.createTurnPayload();
+
+  match.submitAgentMove({
+    turnId: turn.turnId, moveUci: 'e2e4',
+    publicTrace: {
+      source: 'agent_reported', phase: 'choose', summary: 'Claim center.',
+      candidates: [{ uci: 'e2e4', note: 'Opens lines.' }], selectedMove: 'e2e4',
+    },
+  });
+
+  const decisions = match.snapshot().activity.filter((entry) => entry.type === 'agent.decision');
+  assert.equal(decisions.length, 1);
+  assert.equal(decisions[0].selectedMove, 'e2e4');
+  assert.deepEqual(decisions[0].candidates, [{ uci: 'e2e4', note: 'Opens lines.' }]);
+  assert.equal(match.snapshot().activity.some((entry) => entry.type === 'agent.trace'), false);
 });
 
 test('rejects stale generic turns after a seat move', () => {

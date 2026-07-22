@@ -29,7 +29,13 @@ export function chooseDemoAction(turn) {
   const moveUci = preference
     .map((square) => cachedMoves.find((move) => move.uci.startsWith(square))?.uci)
     .find(Boolean) ?? cachedMoves[0]?.uci;
-  if (moveUci) return { moveUci, trace: { phase: 'demo', summary: 'Demo connector selected a cached legal move.' } };
+  if (moveUci) return {
+    moveUci,
+    trace: {
+      phase: 'demo', summary: 'Demo connector selected a cached legal move.',
+      candidates: [{ uci: moveUci, note: 'Demo legal candidate.' }], selectedMove: moveUci,
+    },
+  };
 
   const movable = new Set((turn.positionStatus?.movablePieces ?? []).map((piece) => piece.square));
   const probeSquare = preference.find((square) => movable.has(square)) ?? turn.positionStatus?.movablePieces?.[0]?.square;
@@ -85,7 +91,10 @@ export function createAgentRequest(turn, action) {
   if (!turn?.turnId) throw new Error('STALE_TURN');
   if (action?.probeSquare) return { type: 'moves.list', turnId: turn.turnId, square: action.probeSquare };
   if (action?.requestAllMoves) return { type: 'moves.list_all', turnId: turn.turnId };
-  if (action?.moveUci) return { type: 'move.submit', turnId: turn.turnId, moveUci: action.moveUci };
+  if (action?.moveUci) return {
+    type: 'move.submit', turnId: turn.turnId, moveUci: action.moveUci,
+    ...(action.trace ? { publicTrace: { ...action.trace, selectedMove: action.moveUci } } : {}),
+  };
   throw new Error('INVALID_AGENT_ACTION');
 }
 

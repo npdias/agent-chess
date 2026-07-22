@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   cacheProbe,
   cacheAllMoves,
+  chooseDemoAction,
   chooseDemoMove,
   createAgentRequest,
   parseAgentAction,
@@ -51,6 +52,15 @@ test('demo connector chooses a legal central move when available', () => {
   assert.equal(chooseDemoMove(turn), 'e2e4');
 });
 
+test('demo move trace names its selected legal candidate', () => {
+  const action = chooseDemoAction({
+    probeResults: { e2: { moves: [{ uci: 'e2e4', san: 'e4' }] } },
+  });
+
+  assert.deepEqual(action.trace.candidates, [{ uci: 'e2e4', note: 'Demo legal candidate.' }]);
+  assert.equal(action.trace.selectedMove, 'e2e4');
+});
+
 test('parses a progressive piece probe action', () => {
   assert.deepEqual(parseAgentAction('{"probeSquare":"e2"}'), { probeSquare: 'e2', trace: null });
 });
@@ -62,6 +72,18 @@ test('parses an explicit full move-list request', () => {
 test('maps explicit full-list action to a turn-scoped outbound request', () => {
   assert.deepEqual(createAgentRequest({ turnId: 'turn-all' }, { requestAllMoves: true }), {
     type: 'moves.list_all', turnId: 'turn-all',
+  });
+});
+
+test('attaches public trace to submitted move and binds selected move', () => {
+  assert.deepEqual(createAgentRequest({ turnId: 'turn-move' }, {
+    moveUci: 'e2e4',
+    trace: { source: 'agent_reported', phase: 'choose', summary: 'Claim center.', candidates: [{ uci: 'e2e4' }] },
+  }), {
+    type: 'move.submit', turnId: 'turn-move', moveUci: 'e2e4',
+    publicTrace: {
+      source: 'agent_reported', phase: 'choose', summary: 'Claim center.', candidates: [{ uci: 'e2e4' }], selectedMove: 'e2e4',
+    },
   });
 });
 
