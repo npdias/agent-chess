@@ -1,4 +1,4 @@
-import { canHumanMove, selectHumanSquare, buildHumanMove, capabilityStorageEntries, deriveExhibitionSummary, materialSummary, replayPlyForRow, controllerColor, consumeSuppressedClick } from './board-interaction.js';
+import { canHumanMove, selectHumanSquare, buildHumanMove, capabilityStorageEntries, deriveExhibitionSummary, materialSummary, replayPlyForRow, controllerColor, consumeSuppressedClick, displayedSeats } from './board-interaction.js';
 
 const PIECES = {
   K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
@@ -306,6 +306,17 @@ function renderReview(match, summary) {
   qs('review-list').replaceChildren(...items.map(([label, value]) => buildReviewItem(document, label, value)));
 }
 
+function renderPlayerStrips(match, summary = deriveMatchSummary(match)) {
+  for (const [position, seat] of Object.entries(displayedSeats(match.seats, boardFlipped))) {
+    qs(`${position}-name`).textContent = seat.name ?? seat.color;
+    qs(`${position}-color`).textContent = `${seat.color[0].toUpperCase()}${seat.color.slice(1)}`;
+    qs(`${position}-kind`).textContent = seat.kindLabel;
+    qs(`${position}-avatar`).className = `avatar avatar-${seat.kind}`;
+    qs(`${position}-avatar`).textContent = (seat.name ?? seat.kindLabel).slice(0, 2).toUpperCase();
+    qs(`${position}-state`).textContent = summary.review ? 'Finished' : match.game.turn === seat.color ? 'To move' : 'No clock';
+  }
+}
+
 function render(match) {
   currentMatch = match;
   const summary = deriveMatchSummary(match);
@@ -314,15 +325,9 @@ function render(match) {
   const seats = match.seats ?? {};
   qs('connection').textContent = 'Unrated exhibition';
   qs('connection').dataset.connected = String(match.connected);
-  qs('connection-small').textContent = summary.activeName;
   qs('engine').textContent = 'Unrated exhibition';
-  qs('engine-inline').textContent = seats.black?.kind ?? '';
   qs('match-title').textContent = summary.review ? summary.status : `${seats.white?.name ?? 'White'} vs ${seats.black?.name ?? 'Black'}`;
-  qs('turn-label').textContent = summary.review ? summary.resultLabel : `${seats[match.game.turn]?.name ?? match.game.turn} to move`;
-  qs('engine-state').textContent = summary.review ? 'Finished' : 'No clock';
-  qs('agent-color').textContent = seats.white?.kind ?? '';
-  qs('agent-name').textContent = seats.white?.name ?? 'White';
-  qs('opponent-name').textContent = seats.black?.name ?? 'Black';
+  renderPlayerStrips(match, summary);
   qs('fen').textContent = match.game.fen;
   const material = materialSummary(match.game.positions?.[0] ?? match.game.fen, match.game.fen, humanColor);
   qs('material').textContent = `Captured: ${material.captured.join(', ') || 'none'} · Material ${material.difference >= 0 ? '+' : ''}${material.difference}`;
@@ -441,7 +446,7 @@ function boot() {
   qs('steering-form').addEventListener('submit', sendSteering);
   qs('skill-level').addEventListener('input', (event) => { qs('skill-output').value = event.target.value; });
   qs('new-match-button').addEventListener('click', () => { location.href = '/'; });
-  qs('flip-board').addEventListener('click', () => { boardFlipped = !boardFlipped; if (currentMatch) renderBoard(currentMatch); });
+  qs('flip-board').addEventListener('click', () => { boardFlipped = !boardFlipped; if (currentMatch) { renderBoard(currentMatch); renderPlayerStrips(currentMatch); } });
   qs('copy-command').addEventListener('click', async () => {
     const agentColor = currentMatch && Object.entries(currentMatch.seats).find(([, seat]) => seat.kind === 'agent')?.[0];
     const agentCapability = agentColor && sessionStorage.getItem(`${currentMatch.id}:capability:${agentColor}`);

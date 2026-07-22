@@ -56,15 +56,15 @@
         </section>
 
         <div class="player-strip opponent">
-          <div class="player-identity"><span class="avatar avatar-engine">SF</span><div><strong id="opponent-name">Stockfish</strong><small id="engine-inline">Local engine opponent</small></div></div>
-          <div class="player-meta"><span class="rating-label">Engine</span><span class="clock" id="engine-state">Ready</span></div>
+          <div class="player-identity"><span id="top-avatar" class="avatar">—</span><div><strong id="top-name">Black</strong><small id="top-color">Black</small></div></div>
+          <div class="player-meta"><span class="rating-label" id="top-kind">Player</span><span class="clock" id="top-state">No clock</span></div>
         </div>
 
         <div id="board" class="board" aria-label="Current chess position"></div>
 
         <div class="player-strip agent">
-          <div class="player-identity"><span class="avatar avatar-agent">AI</span><div><strong id="agent-name">Connected agent</strong><small id="agent-color"></small></div></div>
-          <div class="player-meta"><span class="rating-label" id="connection-small">Waiting</span><span id="turn-label" class="clock"></span></div>
+          <div class="player-identity"><span id="bottom-avatar" class="avatar">—</span><div><strong id="bottom-name">White</strong><small id="bottom-color">White</small></div></div>
+          <div class="player-meta"><span class="rating-label" id="bottom-kind">Player</span><span id="bottom-state" class="clock">No clock</span></div>
         </div>
 
         <div class="board-footer">

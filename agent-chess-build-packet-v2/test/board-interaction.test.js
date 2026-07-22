@@ -11,6 +11,7 @@ import {
   replayPlyForRow,
   controllerColor,
   consumeSuppressedClick,
+  displayedSeats,
 } from '../public/board-interaction.js';
 
 function initialHumanMatch(color) {
@@ -209,4 +210,17 @@ test('does not report promoted pawn as captured', () => {
   const initial = '4k3/P7/8/8/8/8/8/4K3 w - - 0 1';
   const promoted = 'Q3k3/8/8/8/8/8/8/4K3 b - - 0 1';
   assert.deepEqual(materialSummary(initial, promoted, 'white').captured, []);
+});
+
+test('maps top and bottom seats from board orientation with generic kinds', () => {
+  const humanEngine = { white: { kind: 'engine', name: 'Computer' }, black: { kind: 'human', name: 'Human' } };
+  assert.deepEqual(displayedSeats(humanEngine, false), {
+    top: { color: 'black', kind: 'human', kindLabel: 'Human', name: 'Human' },
+    bottom: { color: 'white', kind: 'engine', kindLabel: 'Engine', name: 'Computer' },
+  });
+  assert.deepEqual(displayedSeats(humanEngine, true), {
+    top: { color: 'white', kind: 'engine', kindLabel: 'Engine', name: 'Computer' },
+    bottom: { color: 'black', kind: 'human', kindLabel: 'Human', name: 'Human' },
+  });
+  assert.equal(displayedSeats({ white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'My agent' } }, false).top.kindLabel, 'Agent');
 });

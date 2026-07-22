@@ -118,6 +118,14 @@ export function consumeSuppressedClick(suppressed) {
   return { handle: !suppressed, suppressed: false };
 }
 
+export function displayedSeats(seats = {}, flipped = false) {
+  const kindLabel = (kind) => ({ human: 'Human', agent: 'Agent', engine: 'Engine' }[kind] ?? 'Player');
+  const display = (color) => ({ color, ...seats[color], kindLabel: kindLabel(seats[color]?.kind) });
+  return flipped
+    ? { top: display('white'), bottom: display('black') }
+    : { top: display('black'), bottom: display('white') };
+}
+
 export function replayPlyForRow(index, hasBlackMove, totalPly) {
   return Math.min(totalPly, index * 2 + (hasBlackMove ? 2 : 1));
 }
