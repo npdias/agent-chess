@@ -58,20 +58,17 @@ export class MatchSession {
     return this.status;
   }
 
-  publishTrace({ turnId, kind = 'status', phase = 'thinking', summary, candidates, selectedMove = null } = {}) {
+  publishTrace({ turnId, source = 'adapter_generated', kind = 'status', phase = 'thinking', summary, candidates, selectedMove = null } = {}) {
     this._assertActiveTurn(turnId);
-    this._assertTraceMoves({ candidates, selectedMove });
+    if (!['agent_reported', 'provider_summary', 'adapter_generated'].includes(source)) throw new Error('INVALID_TRACE_SOURCE');
     const clean = String(summary ?? '').trim();
     if (!clean) throw new Error('EMPTY_TRACE');
     const entry = this._recordActivity({
       type: 'agent.trace',
-      source: kind === 'decision' ? 'agent' : 'connector',
-      kind: kind === 'decision' ? 'decision' : 'status',
+      source, actor: 'connector', kind: 'status',
       phase,
       turnId,
       summary: clean,
-      candidates,
-      selectedMove,
     });
     this.trace.push(entry);
     return entry;
@@ -163,7 +160,7 @@ export class MatchSession {
     const applied = this.game.applyMove(moveUci);
     if (committedTrace) {
       this._recordActivity({
-        type: 'agent.decision', ...committedTrace, turnId,
+        type: 'agent.decision', ...committedTrace, actor: 'agent', turnId,
       });
     }
     this.closedTurnIds.add(turnId);
@@ -287,7 +284,7 @@ export class MatchSession {
       termination: this.termination,
       steeringMode: this.steeringMode,
       createdAt: this.createdAt,
-      trace: [...this.trace],
+      trace: [],
       activity: this.activity.map((entry) => ({
         ...entry,
         candidates: entry.candidates.map((candidate) => ({ ...candidate })),
@@ -356,10 +353,11 @@ export class MatchSession {
     }
   }
 
-  _recordActivity({ type, source, kind = null, phase, turnId = null, summary = '', candidates, selectedMove = null, code = null }) {
+  _recordActivity({ type, source, actor = null, kind = null, phase, turnId = null, summary = '', candidates, selectedMove = null, code = null }) {
     const entry = {
       type,
       source,
+      ...(actor ? { actor } : {}),
       kind,
       phase: String(phase ?? '').slice(0, 40),
       at: new Date().toISOString(),

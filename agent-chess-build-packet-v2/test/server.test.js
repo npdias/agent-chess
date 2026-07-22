@@ -57,8 +57,10 @@ async function createMatch(address, body) {
   return response.json();
 }
 
-async function getMatch(address, matchId) {
-  const response = await fetch(`${address.httpUrl}/api/matches/${matchId}`);
+async function getMatch(address, matchId, capability = null) {
+  const response = await fetch(`${address.httpUrl}/api/matches/${matchId}`, {
+    headers: capability ? { authorization: `Bearer ${capability}` } : {},
+  });
   assert.equal(response.status, 200);
   return response.json();
 }
@@ -140,12 +142,57 @@ test('generic creation keeps capabilities out of public snapshots and export', a
       mode: 'exhibition', visibility: 'public',
       seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
     });
-    const snapshot = await getMatch(address, created.matchId);
+    const snapshot = await getMatch(address, created.matchId, created.capabilities.white);
     const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`).then((response) => response.json());
     const publicData = JSON.stringify({ snapshot, exported });
     assert.equal(publicData.includes(created.capabilities.white), false);
     assert.equal(publicData.includes(created.capabilities.black), false);
     assert.equal(publicData.includes('seatToken'), false);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('private snapshots require a bound seat capability and private event observers are denied', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'private_eval', visibility: 'private',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const path = `${address.httpUrl}/api/matches/${created.matchId}`;
+    assert.equal((await fetch(path)).status, 401);
+    assert.equal((await fetch(path, { headers: { authorization: `Bearer ${created.capabilities.white}` } })).status, 200);
+    const observer = new WebSocket(`${address.wsUrl}/events?matchId=${created.matchId}`);
+    await new Promise((resolve) => { observer.once('close', resolve); observer.once('error', resolve); });
+  } finally {
+    await server.stop();
+  }
+});
+
+test('public snapshot, events, and export exclude steering guidance sentinels', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public', steeringMode: 'trainer',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const secret = 'PRIVATE_SENTINEL_guidance_prompt_memory';
+    assert.equal((await fetch(`${address.httpUrl}/api/matches/${created.matchId}/steering`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ guidance: secret }),
+    })).status, 202);
+    const observer = new WebSocket(`${address.wsUrl}/events?matchId=${created.matchId}`);
+    const events = collectMessages(observer);
+    await new Promise((resolve, reject) => { observer.once('open', resolve); observer.once('error', reject); });
+    const state = await events.next((message) => message.type === 'match.state');
+    const snapshot = await getMatch(address, created.matchId, created.capabilities.white);
+    const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`).then((response) => response.json());
+    for (const value of [snapshot, state, exported]) assert.equal(JSON.stringify(value).includes(secret), false);
+    assert.equal(snapshot.activeTurn.steering, undefined);
+    observer.close();
   } finally {
     await server.stop();
   }
@@ -292,7 +339,7 @@ test('private_eval suppresses agent decision traces from state and export', asyn
       summary: 'private reasoning', candidates: [{ uci: 'e2e4', note: 'secret' }], selectedMove: 'e2e4',
     } }));
     await messages.next((message) => message.type === 'move.accepted');
-    const snapshot = await getMatch(address, created.matchId);
+    const snapshot = await getMatch(address, created.matchId, created.capabilities.white);
     const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`, {
       headers: { authorization: `Bearer ${created.capabilities.white}` },
     }).then((response) => response.json());
@@ -438,7 +485,7 @@ test('pauses after an engine failure and stores a visible recoverable error', as
   }
 });
 
-test('broadcasts trace candidates in observer state', async () => {
+test('broadcasts only status progress in observer state before move submission', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);
 
@@ -487,9 +534,11 @@ test('broadcasts trace candidates in observer state', async () => {
       && message.match.activity.some((entry) => entry.type === 'agent.trace')
     ));
     const trace = state.match.activity.find((entry) => entry.type === 'agent.trace');
-    assert.deepEqual(trace.candidates, [{ uci: 'e2e4', note: 'Controls d5.' }]);
-    assert.equal(trace.selectedMove, 'e2e4');
-    assert.equal(trace.kind, 'decision');
+    assert.deepEqual(trace.candidates, []);
+    assert.equal(trace.selectedMove, null);
+    assert.equal(trace.kind, 'status');
+    assert.equal(trace.source, 'agent_reported');
+    assert.equal(trace.actor, 'connector');
     agent.close();
     observer.close();
   } finally {

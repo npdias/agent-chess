@@ -56,26 +56,39 @@ test('requires turnId for trace publication', () => {
     /STALE_TURN/
   );
 });
-test('preserves normalized turn-scoped trace fields', () => {
+test('normalizes trace publication as status-only progress', () => {
   assert.deepEqual(parseClientMessage(JSON.stringify({
     type: 'trace.publish',
     turnId: ' t ',
-    kind: 'decision',
+    kind: 'status',
     phase: 'evaluate',
     summary: 'Choose e4.',
-    candidates: [{ uci: 'e2e4', note: 'Claims center.' }],
-    selectedMove: null,
     ignored: true,
   })), {
     type: 'trace.publish',
     turnId: 't',
-    kind: 'decision',
+    kind: 'status',
     source: 'agent_reported',
     phase: 'evaluate',
     summary: 'Choose e4.',
-    candidates: [{ uci: 'e2e4', note: 'Claims center.' }],
-    selectedMove: null,
   });
+});
+
+test('trace publication strips precommit decision fields', () => {
+  assert.deepEqual(parseClientMessage(JSON.stringify({
+    type: 'trace.publish', turnId: 'turn-1', kind: 'decision', summary: 'Considering center.',
+    candidates: [{ uci: 'e2e4' }], selectedMove: 'e2e4',
+  })), {
+    type: 'trace.publish', turnId: 'turn-1', kind: 'status',
+    source: 'agent_reported', phase: 'thinking', summary: 'Considering center.',
+  });
+});
+
+test('rejects unrecognized public trace disclosure sources', () => {
+  assert.throws(() => parseClientMessage(JSON.stringify({
+    type: 'move.submit', turnId: 'turn-1', moveUci: 'e2e4',
+    publicTrace: { source: 'System', summary: 'Claim center.', selectedMove: 'e2e4' },
+  })), /INVALID_TRACE_SOURCE/);
 });
 
 test('rejects supplied history fields that are not integers', () => {

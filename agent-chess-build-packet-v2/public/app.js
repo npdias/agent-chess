@@ -73,7 +73,7 @@ export function derivePhaseEvidence(match = {}) {
 }
 
 export function formatActivity(entry = {}) {
-  const source = ['agent', 'connector', 'system'].includes(entry.source) ? entry.source : 'system';
+  const source = ['agent', 'connector', 'system'].includes(entry.actor ?? entry.source) ? (entry.actor ?? entry.source) : 'system';
   const agent = source === 'agent';
   const typeLabels = {
     'turn.start': 'Position received',
@@ -96,6 +96,7 @@ export function formatActivity(entry = {}) {
     meta,
     detail: entry.summary?.trim() || entry.message?.trim() || fallback,
     source,
+    ...(['agent_reported', 'provider_summary', 'adapter_generated'].includes(entry.source) ? { disclosureSource: entry.source } : {}),
     candidates: Array.isArray(entry.candidates) ? entry.candidates.slice(0, 3) : [],
   };
 }
@@ -119,7 +120,7 @@ export function buildActivityEntry(doc, item) {
   const entry = doc.createElement('article');
   entry.className = `trace-entry ${formatted.source}`;
   const title = doc.createElement('strong');
-  title.textContent = `${formatted.source[0].toUpperCase()}${formatted.source.slice(1)} · ${formatted.label}`;
+  title.textContent = `${formatted.disclosureSource ?? `${formatted.source[0].toUpperCase()}${formatted.source.slice(1)}`} · ${formatted.label}`;
   entry.append(title);
   if (item.at) {
     const time = doc.createElement('small');

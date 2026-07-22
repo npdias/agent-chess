@@ -75,13 +75,12 @@ test('requires one human in public exhibition when human participates', () => {
   }), /UNSUPPORTED_SEAT_COMBINATION/);
 });
 
-test('requires structured traces for public private-eval agent seats', () => {
-  const config = normalizeMatchConfig({
+test('rejects public private-eval seats', () => {
+  assert.throws(() => normalizeMatchConfig({
     mode: 'private_eval', visibility: 'public',
     seats: {
       white: { kind: 'agent', name: 'Public Agent', traceRequirement: 'optional' },
       black: { kind: 'engine', name: 'Stockfish' },
     },
-  });
-  assert.equal(config.seats.white.traceRequirement, 'structured_required');
+  }), /PRIVATE_EVAL_REQUIRES_PRIVATE_VISIBILITY/);
 });

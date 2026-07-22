@@ -33,6 +33,10 @@ export function validateSeatCombination(config) {
   const kinds = seatList.map((seat) => seat.kind);
   const humanCount = kinds.filter((kind) => kind === 'human').length;
 
+  if (config.mode === 'private_eval' && config.visibility !== 'private') {
+    throw new Error('PRIVATE_EVAL_REQUIRES_PRIVATE_VISIBILITY');
+  }
+
   if (config.visibility === 'public' && !config.compatibility) {
     for (const seat of seatList) {
       if (seat.kind === 'agent') seat.traceRequirement = 'structured_required';

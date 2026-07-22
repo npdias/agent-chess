@@ -42,6 +42,7 @@ const TURN_SCOPED_TYPES = new Set([
 const REQUEST_TYPES = TURN_SCOPED_TYPES;
 const SQUARE_PATTERN = /^[a-h][1-8]$/;
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
+const TRACE_SOURCES = new Set(['agent_reported', 'provider_summary', 'adapter_generated']);
 
 export function parsePublicTrace(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_TRACE');
@@ -57,9 +58,11 @@ export function parsePublicTrace(value) {
     throw new Error(ERROR_CODES.INVALID_MOVE_FORMAT);
   }
 
+  const source = typeof value.source === 'string' && value.source.trim()
+    ? value.source.trim() : 'agent_reported';
+  if (!TRACE_SOURCES.has(source)) throw new Error('INVALID_TRACE_SOURCE');
   return {
-    source: typeof value.source === 'string' && value.source.trim()
-      ? value.source.trim().slice(0, 40) : 'agent_reported',
+    source,
     phase: typeof value.phase === 'string' ? value.phase.trim().slice(0, 40) : 'thinking',
     summary: value.summary.trim().slice(0, 500),
     candidates: Array.isArray(value.candidates) ? value.candidates.slice(0, 3).map((candidate) => ({
@@ -118,10 +121,9 @@ export function parseClientMessage(raw) {
   }
 
   if (message.type === MESSAGE_TYPES.TRACE_PUBLISH) {
-    if (typeof message.kind === 'string') {
-      parsed.kind = message.kind === 'decision' ? 'decision' : 'status';
-    }
-    Object.assign(parsed, parsePublicTrace(message));
+    parsed.kind = 'status';
+    const { source, phase, summary } = parsePublicTrace(message);
+    Object.assign(parsed, { source, phase, summary });
   }
 
   return parsed;

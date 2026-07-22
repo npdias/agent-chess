@@ -303,7 +303,7 @@ test('stores only explicit structured trace summaries', () => {
 
   assert.equal(entry.type, 'agent.trace');
   assert.equal(entry.phase, 'planning');
-  assert.equal(match.snapshot().trace.at(-1).summary, 'Develop the kingside knight.');
+  assert.equal(match.snapshot().activity.at(-1).summary, 'Develop the kingside knight.');
 });
 
 test('rejects trace publication without an active turn before storing activity', () => {
@@ -425,11 +425,11 @@ test('rejects probes made after their turn accepts a move', () => {
   assert.throws(() => match.validateCandidate({ turnId: turn.turnId, moveUci: 'd2d4' }), /STALE_TURN/);
 });
 
-test('sanitizes optional decision trace without fabricating agent activity', () => {
+test('publishes only sanitized status progress before a move', () => {
   const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
   const turn = match.createTurnPayload();
 
-  assert.equal(match.snapshot().activity.some((entry) => entry.source === 'agent'), false);
+  assert.equal(match.snapshot().activity.some((entry) => entry.actor === 'agent'), false);
   const entry = match.publishTrace({
     turnId: turn.turnId,
     kind: 'decision',
@@ -444,35 +444,24 @@ test('sanitizes optional decision trace without fabricating agent activity', () 
     selectedMove: 'e2e4',
   });
 
-  assert.equal(entry.source, 'agent');
+  assert.equal(entry.source, 'adapter_generated');
+  assert.equal(entry.actor, 'connector');
   assert.equal(entry.summary.length, 500);
-  assert.equal(entry.candidates.length, 3);
-  assert.equal(entry.candidates[0].note.length, 160);
-  assert.equal(entry.selectedMove, 'e2e4');
+  assert.deepEqual(entry.candidates, []);
+  assert.equal(entry.selectedMove, null);
   assert.deepEqual(match.snapshot().activity.at(-1), entry);
 });
 
-test('preserves decision trace kind and rejects malformed trace moves before mutation', () => {
+test('strips decision details from precommit trace publication', () => {
   const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
   const turn = match.createTurnPayload();
-  const before = match.snapshot().activity;
-
-  assert.throws(
-    () => match.publishTrace({
-      turnId: turn.turnId,
-      summary: 'Invalid trace.',
-      candidates: [{ uci: 'e2e9', note: 'Malformed.' }],
-    }),
-    /INVALID_MOVE_FORMAT/
-  );
-  assert.deepEqual(match.snapshot().activity, before);
-
   const entry = match.publishTrace({
     turnId: turn.turnId,
     kind: 'decision',
     summary: 'Choose e4.',
     selectedMove: 'e2e4',
   });
-  assert.equal(entry.kind, 'decision');
-  assert.equal(match.snapshot().activity.at(-1).kind, 'decision');
+  assert.equal(entry.kind, 'status');
+  assert.deepEqual(entry.candidates, []);
+  assert.equal(entry.selectedMove, null);
 });

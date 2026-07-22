@@ -63,9 +63,22 @@ function safeSend(socket, message) {
 }
 
 function publicSnapshot(record) {
+  const turn = record.session.activeTurn();
   return {
     ...record.session.snapshot(),
-    activeTurn: record.session.activeTurn(),
+    activeTurn: turn && {
+      protocolVersion: turn.protocolVersion,
+      gameId: turn.gameId,
+      turnId: turn.turnId,
+      fen: turn.fen,
+      ply: turn.ply,
+      positionStatus: turn.positionStatus,
+      deadline: turn.deadline,
+      deadlineMs: turn.deadlineMs,
+      activeColor: turn.activeColor,
+      seatKind: turn.seatKind,
+      mode: turn.mode,
+    },
     connected: [...record.agentSockets.values()].some((socket) => socket?.readyState === WebSocket.OPEN),
     engine: {
       name: 'Stockfish 18 Lite',
@@ -386,6 +399,9 @@ export function createAgentChessServer({
     if (request.method === 'GET' && matchRoute) {
       const record = matches.get(decodeURIComponent(matchRoute[1]));
       if (!record) return sendJson(response, 404, { error: 'MATCH_NOT_FOUND' }), true;
+      if (record.session.visibility === 'private' && !seatForToken(request, record)) {
+        return sendJson(response, 401, { error: 'UNAUTHORIZED' }), true;
+      }
       sendJson(response, 200, publicSnapshot(record));
       return true;
     }
@@ -511,7 +527,7 @@ export function createAgentChessServer({
         }
         if (url.pathname === '/events') {
           const record = matches.get(url.searchParams.get('matchId'));
-          if (!record) return socket.destroy();
+          if (!record || record.session.visibility === 'private') return socket.destroy();
           eventWss.handleUpgrade(request, socket, head, (ws) => {
             eventWss.emit('connection', ws, request, record);
           });
