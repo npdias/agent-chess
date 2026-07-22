@@ -183,3 +183,11 @@ test('caps the aligned desktop board and derives rail height from it at every de
   assert.doesNotMatch(css, /@media \(min-width: 1021px\) and \(max-height: 1250px\)/);
   assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*210px\)/);
 });
+
+test('locks chess squares to eight equal grid rows without intrinsic piece overflow', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+
+  assert.match(css, /\.board\s*\{[^}]*grid-template-rows:\s*repeat\(8,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(css, /\.square\s*\{[^}]*min-width:\s*0[^}]*min-height:\s*0/);
+  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.piece\s*\{[^}]*font-size:\s*min\(5rem,\s*calc\(var\(--live-board-size\)\s*\/\s*10\)\)/);
+});
