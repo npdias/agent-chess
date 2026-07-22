@@ -203,11 +203,11 @@ test('uses a desktop height-density rule to keep the square board in one viewpor
   assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.status-line,\s*\.player-strip,\s*\.board-footer\s*\{[^}]*width:\s*100%/);
 });
 
-test('allows the local connector command to shrink on narrow screens', async () => {
+test('allows the terminal fallback command to shrink on narrow screens', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-  assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.connector-actions\s*\{[^}]*min-width:\s*0/);
-  assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.connector-actions small\s*\{[^}]*min-width:\s*0/);
+  assert.match(css, /#match-tools-dialog\s*\{[^}]*width:\s*min\(620px,\s*calc\(100vw\s*-\s*32px\)\)/);
+  assert.match(css, /\.terminal-fallback code\s*\{[^}]*overflow-wrap:\s*anywhere/);
 });
 
 test('centers a height-bound desktop board beside a bounded three-surface rail', async () => {
@@ -441,6 +441,22 @@ test('keeps every visible desktop footer child within the 24px footer', async ()
   assert.match(css, /\.board-footer \.material\s*\{[^}]*white-space:\s*nowrap[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*line-height:\s*24px/);
   assert.match(css, /\.board-footer \.text-button\s*\{[^}]*height:\s*24px[^}]*min-height:\s*24px[^}]*padding:\s*0 6px[^}]*line-height:\s*24px/);
   assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.board-footer \.text-button\s*\{[^}]*min-height:\s*44px/);
+});
+
+test('keeps every mobile match and dialog action at least 44px tall', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const mobile = css.match(/@media \(max-width: 720px\)\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+  for (const selector of ['.context-actions button', '.dialog-heading button', '.tool-actions button', '.terminal-fallback button', '.promotion-actions button', '#promotion-dialog > form > .text-button']) {
+    assert.match(mobile, new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.match(mobile, /min-height:\s*44px/);
+});
+
+test('removes dead connector code and obsolete match eyebrow selectors', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(css, /\.connector-card code\b/);
+  assert.doesNotMatch(css, /\.connector-actions small\b/);
+  assert.doesNotMatch(css, /\.match-context \.eyebrow\b/);
 });
 
 test('keeps board squares stable while reconciling keyed pieces', async () => {
