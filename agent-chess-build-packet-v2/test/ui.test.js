@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fenToBoard, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, formatActivity } from '../public/app.js';
+import { fenToBoard, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, formatActivity, selectActivityEntries, buildActivityEntry } from '../public/app.js';
 
 test('maps FEN piece placement into 64 board squares', () => {
   const board = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
@@ -62,6 +62,30 @@ test('shows an agent-working fallback without invented decision text', () => {
   const activity = formatActivity({ source: 'agent', type: 'agent.trace', phase: 'evaluate' });
   assert.equal(activity.label, 'Evaluate');
   assert.equal(activity.detail, 'Agent working');
+});
+
+test('retains queued steering when verified activity exists, newest first', () => {
+  const entries = selectActivityEntries({
+    activity: [{ type: 'moves.list', source: 'system', at: '2026-07-21T12:00:00.000Z' }],
+    trace: [{ type: 'steering.queued', message: 'Avoid exchanges.', at: '2026-07-21T12:01:00.000Z' }],
+  });
+  assert.deepEqual(entries.map((entry) => entry.type), ['steering.queued', 'moves.list']);
+});
+
+test('renders malicious activity text without injecting markup', () => {
+  const nodes = [];
+  const doc = { createElement(tag) {
+    const node = { tag, children: [], append(...children) { this.children.push(...children); }, setAttribute() {} };
+    nodes.push(node);
+    return node;
+  } };
+  const entry = buildActivityEntry(doc, {
+    source: 'agent', type: 'agent.trace', phase: 'evaluate', summary: '<img src=x onerror=alert(1)>',
+    candidates: [{ uci: 'e2e4', note: '<script>alert(1)</script>' }],
+  });
+  const text = nodes.map((node) => node.textContent).filter(Boolean);
+  assert.equal(entry.innerHTML, undefined);
+  assert.deepEqual(text, ['Agent · Evaluate', '<img src=x onerror=alert(1)>', 'e2e4', ' <script>alert(1)</script>']);
 });
 
 test('keeps phase ribbon and activity rail visible outside secondary tabs', async () => {

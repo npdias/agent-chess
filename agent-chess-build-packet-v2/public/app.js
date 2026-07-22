@@ -55,7 +55,7 @@ export function deriveTurnPhase(match = {}) {
 }
 
 export function formatActivity(entry = {}) {
-  const agent = entry.source === 'agent';
+  const agent = entry.source === 'agent' || entry.type === 'agent.trace';
   const typeLabels = {
     'turn.start': 'Position received',
     'moves.list': 'Piece moves checked',
@@ -64,6 +64,7 @@ export function formatActivity(entry = {}) {
     'move.validate': 'Candidate checked',
     'move.submit': 'Move submitted',
     'opponent.move': 'Opponent moved',
+    'steering.queued': 'Steering queued',
   };
   const count = Number.isFinite(entry.count) ? `${entry.count} legal move${entry.count === 1 ? '' : 's'}` : '';
   const meta = entry.type === 'moves.list' && entry.square && count ? `${entry.square} · ${count}` : entry.selectedMove ?? '';
@@ -71,10 +72,63 @@ export function formatActivity(entry = {}) {
   return {
     label: agent ? deriveTurnPhase({ activity: [entry] }).label : (typeLabels[entry.type] ?? 'System event'),
     meta,
-    detail: entry.summary?.trim() || fallback,
+    detail: entry.summary?.trim() || entry.message?.trim() || fallback,
     source: agent ? 'agent' : 'system',
     candidates: Array.isArray(entry.candidates) ? entry.candidates.slice(0, 3) : [],
   };
+}
+
+export function selectActivityEntries(match = {}) {
+  const seen = new Set();
+  return [...(match.activity ?? []), ...(match.trace ?? [])]
+    .filter((entry) => {
+      const key = [entry.type, entry.source, entry.at, entry.phase, entry.summary, entry.message, entry.uci, entry.san].join('\u0000');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((left, right) => String(right.at ?? '').localeCompare(String(left.at ?? '')));
+}
+
+export function buildActivityEntry(doc, item) {
+  const formatted = formatActivity(item);
+  const entry = doc.createElement('article');
+  entry.className = `trace-entry ${formatted.source}`;
+  const title = doc.createElement('strong');
+  title.textContent = `${formatted.source === 'agent' ? 'Agent' : 'System'} · ${formatted.label}`;
+  entry.append(title);
+  if (item.at) {
+    const time = doc.createElement('small');
+    time.textContent = new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    entry.append(time);
+  }
+  if (formatted.meta) {
+    const meta = doc.createElement('span');
+    meta.className = 'activity-meta';
+    meta.textContent = formatted.meta;
+    entry.append(meta);
+  }
+  const detail = doc.createElement('p');
+  detail.textContent = formatted.detail;
+  entry.append(detail);
+  if (formatted.candidates.length) {
+    const candidates = doc.createElement('ul');
+    candidates.className = 'candidate-list';
+    for (const candidate of formatted.candidates) {
+      const candidateItem = doc.createElement('li');
+      const move = doc.createElement('code');
+      move.textContent = candidate.uci;
+      candidateItem.append(move);
+      if (candidate.note) {
+        const note = doc.createElement('span');
+        note.textContent = ` ${candidate.note}`;
+        candidateItem.append(note);
+      }
+      candidates.append(candidateItem);
+    }
+    entry.append(candidates);
+  }
+  return entry;
 }
 
 export function deriveMatchSummary(match) {
@@ -176,23 +230,13 @@ function renderMoves(match) {
 
 function renderTrace(match) {
   const trace = qs('activity');
-  const activity = match.activity?.length ? match.activity : match.trace ?? [];
+  const activity = selectActivityEntries(match);
   trace.replaceChildren();
   if (!activity.length) {
     trace.innerHTML = '<div class="trace-empty"><strong>Waiting for activity</strong><p>Verified system events plus optional agent summaries appear after connector starts.</p></div>';
     return;
   }
-  for (const item of [...activity].reverse()) {
-    const formatted = formatActivity(item);
-    const entry = document.createElement('article');
-    entry.className = `trace-entry ${formatted.source}`;
-    const time = item.at ? new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-    const candidates = formatted.candidates.length
-      ? `<ul class="candidate-list">${formatted.candidates.map((candidate) => `<li><code>${candidate.uci}</code>${candidate.note ? ` <span>${candidate.note}</span>` : ''}</li>`).join('')}</ul>`
-      : '';
-    entry.innerHTML = `<strong>${formatted.source === 'agent' ? 'Agent' : 'System'} · ${formatted.label}</strong><small>${time}</small>${formatted.meta ? `<span class="activity-meta">${formatted.meta}</span>` : ''}<p>${formatted.detail}</p>${candidates}`;
-    trace.append(entry);
-  }
+  for (const item of activity) trace.append(buildActivityEntry(document, item));
 }
 
 function renderPhaseRibbon(match) {
