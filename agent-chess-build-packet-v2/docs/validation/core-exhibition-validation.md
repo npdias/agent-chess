@@ -49,7 +49,7 @@ Playwright CLI used snapshots before refs, then local browser checks.
 | Evidence | Viewport / dimensions | Findings |
 | --- | --- | --- |
 | [human-engine-desktop.png](screenshots/human-engine-desktop.png) | 1440x900 image; board 610x610; squares 76.25x76.25; rail 440x820; gap 16px; scrollHeight/clientHeight was not retained for this earlier capture | Square board; `e2` selected; legal targets `e3`, `e4`; phase/activity visible. |
-| [human-engine-mobile.png](screenshots/human-engine-mobile.png) | 390x844 image; board 366x366; squares 45.75x45.75; rail 366px wide | Board square/untrimmed; no horizontal overflow; phase above board; activity below board. |
+| [human-engine-mobile.png](screenshots/human-engine-mobile.png) | 390x844 image; Human Black vs engine; board 366x366; squares 45.75x45.75; scrollHeight/clientHeight `1899/844` | Live pointer-drag `e7→e5` produced `POST /human-moves` `202`; engine first moved `g1f3`; Black home rank (`h8…a8`) was nearest. Board square/unclipped; horizontal overflow false; phase/activity clear; console 0 errors/warnings. Long activity/move history causes vertical scroll. |
 | [human-agent-spectator.png](screenshots/human-agent-spectator.png) | 1440x900 image; board 610x610; rows 76.25px; gap 16px; scrollHeight/clientHeight `905/900`; horizontal overflow `false` | Public 12-ply human-agent activity visibly includes accepted candidate plus rationale. DOM inspection counted exactly 64 disabled square controls. Screenshot does not itself prove count. |
 
 After favicon fix, browser console: 0 errors, 0 warnings. Dynamic network requests observed only successful `GET /api/matches/:id` (200); match create POST was 201. Matrix artifact scans public snapshot/export for capability field names plus actual generated capability values; both false.
@@ -58,7 +58,7 @@ After favicon fix, browser console: 0 errors, 0 warnings. Dynamic network reques
 
 - Step 1: install PASS; full tests PASS; audit BLOCKED externally.
 - Step 2: PASS; both human colors and generic public agent reached required three accepted turns.
-- Step 3: PARTIAL; click plus legal target browser proof, deterministic drag/promotion fixture proof, abort/resign/export/PGN/observer matrix proof. Manual Black browser orientation/touch-device proof still absent.
+- Step 3: PARTIAL; click plus legal-target browser proof, live mobile Human Black pointer-drag/orientation proof, deterministic promotion fixture proof, abort/resign/export/PGN/observer matrix proof. Native touch-device promotion flow remains fixture-only.
 - Step 4: PASS for deterministic human-agent 12-ply live API/WebSocket matrix plus public browser activity screenshot; no private rationale is exposed.
 - Step 5: PARTIAL; required desktop/mobile screenshots prove 1:1 geometry. Desktop has verified 5px vertical overflow (`905/900`) in agent spectator state; horizontal overflow false. No dark-bar/seam pixel-analysis artifact.
 - Step 6: this report records exact evidence and gaps.

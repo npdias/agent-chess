@@ -10,6 +10,6 @@ Detailed evidence: `agent-chess-build-packet-v2/docs/validation/core-exhibition-
 
 Completed: 161/161 full suite; White/Black human 3-turn smokes; generic public-agent 3-turn smoke; deterministic human-agent 12-ply proof; abort/resign/export/observer/spectator matrix; desktop/mobile/spectator evidence.
 
-Blocked: `npm audit --audit-level=high` external DNS/approval boundary. Manual Black touch-device/orientation proof remains unrun; promotion is deterministic fixture proof. Do not accept next plan yet.
+Blocked: `npm audit --audit-level=high` external DNS/approval boundary. Live mobile Human Black pointer-drag/orientation proof passed; promotion remains deterministic fixture proof. Do not accept next plan yet.
 
 Current validation replaces prior checkpoint claims. See detailed report for all commands, evidence, limitations, and exact match IDs.
