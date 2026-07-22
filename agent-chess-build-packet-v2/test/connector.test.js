@@ -69,6 +69,27 @@ test('preserves an allowed command trace source and defaults absent source to ag
   assert.equal(defaulted.trace.source, 'agent_reported');
 });
 
+test('defaults only absent, null, or empty command trace source to agent reported', () => {
+  for (const source of [undefined, null, '']) {
+    const trace = { summary: 'Selected center.', ...(source !== undefined ? { source } : {}) };
+    const parsed = parseAgentOutput(JSON.stringify({ moveUci: 'e2e4', trace }), turn);
+    assert.equal(parsed.trace.source, 'agent_reported');
+  }
+});
+
+test('rejects an explicit unsupported command trace source', () => {
+  assert.throws(() => parseAgentAction(JSON.stringify({
+    moveUci: 'e2e4', trace: { source: 'System', summary: 'Selected center.' },
+  })), /INVALID_TRACE_SOURCE/);
+});
+
+test('rejects unsupported trace provenance returned by a command before submission', async () => {
+  await assert.rejects(
+    runCommandAgent('node test/fixtures/invalid-trace-source-agent.js', turn, { timeoutMs: 2000 }),
+    /INVALID_TRACE_SOURCE/
+  );
+});
+
 test('accepts a bare UCI move from a simple command harness', () => {
   assert.deepEqual(parseAgentOutput('g1f3\n', turn), { moveUci: 'g1f3', trace: null });
 });

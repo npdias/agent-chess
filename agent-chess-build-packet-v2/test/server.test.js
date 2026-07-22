@@ -836,7 +836,7 @@ test('accepts an agent move, runs the opponent, and emits the next turn', async 
   }
 });
 
-test('pauses after an engine failure and stores a visible recoverable error', async () => {
+test('fails after an engine error and stores a visible nonrecoverable error', async () => {
   let calls = 0;
   const server = createAgentChessServer({ stockfishFactory: async () => ({
     async bestMove() { calls += 1; throw new Error('engine unavailable'); }, close() {},

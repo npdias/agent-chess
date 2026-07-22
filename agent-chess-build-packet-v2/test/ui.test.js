@@ -94,6 +94,8 @@ test('labels connector status and visible engine errors without claiming agent a
   assert.deepEqual(formatActivity({ source: 'system', type: 'error', message: 'Engine offline.' }), {
     label: 'Match paused', meta: '', detail: 'Engine offline.', source: 'system', candidates: [],
   });
+  assert.equal(formatActivity({ source: 'system', type: 'error', message: 'Engine unavailable.', recoverable: false }).label, 'Match failed');
+  assert.equal(formatActivity({ source: 'system', type: 'error', message: 'Engine unavailable.', status: 'failed' }).label, 'Match failed');
 });
 
 test('renders exact public trace disclosure source separate from transport actor', () => {

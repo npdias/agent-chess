@@ -90,7 +90,7 @@ export function formatActivity(entry = {}) {
     'move.submit': 'Move submitted',
     'opponent.move': 'Opponent moved',
     'steering.queued': 'Steering queued',
-    error: 'Match paused',
+    error: entry.recoverable === false || entry.status === 'failed' ? 'Match failed' : 'Match paused',
   };
   const count = Number.isFinite(entry.count) ? `${entry.count} legal move${entry.count === 1 ? '' : 's'}` : '';
   const meta = entry.type === 'moves.list' && entry.square && count ? `${entry.square} · ${count}` : entry.selectedMove ?? '';

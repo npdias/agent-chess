@@ -18,8 +18,11 @@ export async function exchangeAgentSession(fetchImpl, server, capability) {
 
 function parseTrace(parsed) {
   if (!parsed.trace?.summary) return null;
+  const suppliedSource = typeof parsed.trace.source === 'string' ? parsed.trace.source.trim() : parsed.trace.source;
+  const source = suppliedSource == null || suppliedSource === '' ? 'agent_reported' : suppliedSource;
+  if (!TRACE_SOURCES.has(source)) throw new Error('INVALID_TRACE_SOURCE');
   return {
-    source: TRACE_SOURCES.has(parsed.trace.source) ? parsed.trace.source : 'agent_reported',
+    source,
     kind: parsed.trace.kind === 'decision' ? 'decision' : 'status',
     phase: String(parsed.trace.phase ?? 'thinking').slice(0, 40),
     summary: String(parsed.trace.summary).slice(0, 1000),

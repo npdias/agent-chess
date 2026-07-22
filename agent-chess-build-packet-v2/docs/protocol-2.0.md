@@ -160,7 +160,7 @@ Stable codes: `STALE_TURN`, `INVALID_SQUARE`, `PIECE_NOT_MOVABLE`, `INVALID_MOVE
 
 ## Progressive connector action contract
 
-Connector invokes configured command using shell, sends compact active turn JSON through stdin, reads one stdout result. Actions: `{ "probeSquare": "e2" }`, `{ "requestAllMoves": true }`, `{ "moveUci": "e2e4" }`; optional `trace` has `phase` capped 40 chars, `summary` capped 1000 chars before transport. Bare UCI works. Connector emits public `trace.publish` events for `evaluate`, action trace, `choose`; it caches matching `moves.list.result` or `moves.list_all.result`; candidate must occur in cached results before `move.submit`. Max four command rounds. Repeated probe/full-list request fails locally.
+Connector invokes configured command using shell, sends compact active turn JSON through stdin, reads one stdout result. Actions: `{ "probeSquare": "e2" }`, `{ "requestAllMoves": true }`, `{ "moveUci": "e2e4" }`; optional `trace` has `phase` capped 40 chars, `summary` capped 1000 chars before transport. Absent, null, or empty command `trace.source` defaults to `agent_reported`; an explicit unsupported source fails locally with `INVALID_TRACE_SOURCE` before submission. Bare UCI works. Connector emits public `trace.publish` events for `evaluate`, action trace, `choose`; it caches matching `moves.list.result` or `moves.list_all.result`; candidate must occur in cached results before `move.submit`. Max four command rounds. Repeated probe/full-list request fails locally.
 
 ## Privacy
 
