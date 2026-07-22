@@ -1,8 +1,33 @@
 # Agent Chess Protocol 2.0
 
 **Status:** Implemented and verified in POC v1.
-**Transport:** JSON WebSocket messages. Agent seat: `ws://HOST/agent?token=SEAT_TOKEN`.
+**Transport:** JSON WebSocket messages. Agent seat: `ws://HOST/agent?ticket=ONE_USE_TICKET` after capability exchange.
 **Rules authority:** `chess.js`; UCI is canonical move identifier.
+
+## Generic exhibition API
+
+Create an exhibition with generic seats. `kind` is `human`, `agent`, or `engine`; `mode` is `exhibition` or `private_eval`; `visibility` is `public` or `private`. Public exhibitions support human-versus-engine, human-versus-agent, agent-versus-engine. `rated` is always false; no ratings or Elo mapping exists. `clock.kind` is always `none`: no clocks.
+
+```json
+{
+  "mode": "exhibition",
+  "visibility": "public",
+  "seats": {
+    "white": { "kind": "human", "name": "Human" },
+    "black": { "kind": "engine", "name": "Stockfish" }
+  }
+}
+```
+
+`POST /api/matches` returns `{ "matchId", "capabilities", "uiPath" }`. Capability is creator-owned secret, returned once; retain it only in caller memory or browser session storage. It authenticates human HTTP actions or agent ticket exchange. It never appears in public snapshot/export. Agent ticket exchange is `POST /api/agent-sessions` using `Authorization: Bearer CAPABILITY`; result has one-use `wsPath` plus 60-second expiry. Raw capability never appears in WebSocket URL.
+
+Legacy creation payloads without `seats` map to agent-versus-engine: `agentColor` maps to agent seat color, `agentName` to agent name, `skillLevel`/`movetimeMs` to engine config, `steeringMode` stays supported. Legacy response additionally has `seatToken` and `agentWsPath`; generic callers must use `capabilities` plus ticket exchange instead.
+
+`GET /api/matches/MATCH_ID` is public snapshot for public exhibitions. `activeTurn` has `turnId`, `activeColor`, `seatKind`, FEN, ply, legal position status, lifecycle deadline fields. A human submits `POST /api/matches/MATCH_ID/human-moves` using `Authorization: Bearer CAPABILITY` plus `{ "turnId", "moveUci" }`; accepted response is `202`. `POST .../resign` works after a move; `POST .../abort` only before any move. Lifecycle statuses: `waiting`, `active`, `completed`, `aborted`, `failed`.
+
+Public agent `move.submit` can include `publicTrace`: structured `source`, `phase`, `summary`, up to three legal `candidates`, `selectedMove`. It becomes public activity/export. Service never receives caller credentials, prompts, secrets, private memory, local files, or private reasoning. Use `private_eval` with `visibility: private`: it is move_only, `trace.publish` returns `TRACE_NOT_ALLOWED`, submitted `publicTrace` is suppressed.
+
+`GET /api/matches/MATCH_ID/export` returns config, status, termination, result, PGN, public activity, positions, engine config, protocol version. Public export needs no auth; private export requires human or agent capability. No persistence: restart clears every match.
 
 ## Server-to-agent messages
 

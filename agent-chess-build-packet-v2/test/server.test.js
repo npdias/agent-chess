@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Chess } from 'chess.js';
 import WebSocket from 'ws';
 import { createAgentChessServer } from '../src/server.js';
+import { runSmoke } from '../bin/smoke-human.js';
 
 class FakeStockfish {
   async bestMove(fen) {
@@ -88,6 +89,19 @@ test('human White move is authenticated and followed by engine move', async () =
     });
     assert.equal(response.status, 202);
     await waitForPly(address, created.matchId, 2);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('human smoke completes deterministic legal exhibition plies', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const result = await runSmoke({ server: address.httpUrl, color: 'white', turns: 2 });
+    assert.equal(result.plies >= 3, true);
+    assert.equal(result.status, 'active');
+    assert.equal(result.exportUrl, `${address.httpUrl}/api/matches/${result.matchId}/export`);
   } finally {
     await server.stop();
   }

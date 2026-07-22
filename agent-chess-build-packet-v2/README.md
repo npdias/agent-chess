@@ -1,6 +1,6 @@
 # Agent Chess POC v1
 
-Local command adapter plays Stockfish through a token-bound WebSocket seat. Browser UI observes match state. Protocol version is `2.0`.
+Local command adapter plays through a capability-to-ticket WebSocket seat. Browser UI observes match state. Protocol version is `2.0`.
 
 ## Install
 
@@ -20,10 +20,39 @@ npm start
 
 Open `http://127.0.0.1:3000`. Create a match, copy generated connector command.
 
+Docker uses same local service:
+
+```bash
+docker build -t agent-chess-poc .
+docker run --rm -p 3000:3000 agent-chess-poc
+```
+
+## Human exhibitions
+
+Open `http://127.0.0.1:3000`, select `Computer` or `My agent`, select White, Black, or Random, then create an unrated exhibition. Human moves use the browser-held seat capability; spectators opening `/?match=MATCH_ID` can observe public state but cannot make human moves.
+
+For a local agent exhibition, create `My agent`, then copy connector command shown only in creating browser. Local runner owns model credentials, prompts, tools, memory, private reasoning. Service owns chess state, legal-move validation, public match record. Exchange agent capability over HTTPS/HTTP header for short-lived ticket before WebSocket connection; never put raw capability in a WebSocket URL.
+
+```bash
+npm run connect -- --server http://127.0.0.1:3000 --seat YOUR_AGENT_CAPABILITY --command "node examples/simple-agent.js"
+```
+
+Compatibility agent-versus-engine smoke:
+
+```bash
+npm run smoke -- --server http://127.0.0.1:3000 --turns 3
+```
+
+Deterministic human-versus-engine smoke:
+
+```bash
+npm run smoke:human -- --server http://127.0.0.1:3000 --color white --turns 3
+```
+
 ```bash
 npm run connect -- \
   --server http://127.0.0.1:3000 \
-  --seat YOUR_SEAT_TOKEN \
+  --seat YOUR_AGENT_CAPABILITY \
   --demo
 ```
 
@@ -32,7 +61,7 @@ Command adapter:
 ```bash
 npm run connect -- \
   --server http://127.0.0.1:3000 \
-  --seat YOUR_SEAT_TOKEN \
+  --seat YOUR_AGENT_CAPABILITY \
   --command "node examples/simple-agent.js"
 ```
 
@@ -54,11 +83,7 @@ Bare UCI output is accepted. Connector caches returned probe data, reinvokes com
 
 ## Protocol
 
-Connect agent seat:
-
-```text
-ws://HOST/agent?token=SEAT_TOKEN
-```
+Exchange agent capability at `POST /api/agent-sessions`, then connect returned one-use WebSocket ticket path. Do not place raw capability in WebSocket URL.
 
 Full versioned wire contract: [`docs/protocol-2.0.md`](docs/protocol-2.0.md).
 
@@ -67,12 +92,13 @@ Full versioned wire contract: [`docs/protocol-2.0.md`](docs/protocol-2.0.md).
 ```bash
 npm test
 npm run smoke -- --server http://127.0.0.1:3000 --turns 3
+npm run smoke:human -- --server http://127.0.0.1:3000 --color white --turns 3
 ```
 
 ## Privacy boundary
 
-Service never requests chain-of-thought, prompts, credentials, secrets, private memory, or local files. Explicit `trace.publish` text is stored in match activity and broadcast to observer clients. Never publish secrets or private reasoning in trace fields.
+Caller owns credentials, prompts, secrets, private memory, local files, private reasoning. Service never requests them. Public exhibitions require concise structured `publicTrace` on agent moves; trace enters public activity/export. Private evaluation is move_only: agent `publicTrace` is suppressed and `trace.publish` rejected. Never publish secrets or private reasoning.
 
 ## POC boundaries
 
-No accounts, persistence, ratings, public matchmaking, MCP adapter, hosted model inference, deployment auth/rate limiting, clocks, timeout adjudication, signed runner, or post-match analysis. Restart clears matches.
+No accounts, no persistence, no ratings, no Elo mapping, no public matchmaking, MCP adapter, hosted model inference, deployment auth/rate limiting, no clocks, timeout adjudication, signed runner, or post-match analysis. Restart clears matches.
