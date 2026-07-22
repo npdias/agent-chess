@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { spawn } from 'node:child_process';
 import { Chess } from 'chess.js';
 import WebSocket from 'ws';
 import { createAgentChessServer } from '../src/server.js';
@@ -104,6 +106,27 @@ test('human smoke completes exact requested turns as White and Black', async () 
       assert.equal(result.status, 'active');
       assert.equal(result.exportUrl, `${address.httpUrl}/api/matches/${result.matchId}/export`);
     }
+  } finally {
+    await server.stop();
+  }
+});
+
+test('generic agent smoke submits a structured trace accepted by the server', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const child = spawn(process.execPath, ['bin/smoke-agent.js', '--server', address.httpUrl, '--turns', '1'], {
+      cwd: new URL('..', import.meta.url),
+    });
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const [code] = await once(child, 'close');
+    assert.equal(code, 0, stderr);
+    assert.match(stdout, /"matchId"/);
+    const matchId = stdout.match(/"matchId":\s*"([^"]+)"/)?.[1];
+    const snapshot = await getMatch(address, matchId);
+    assert.ok(snapshot.activity.some((entry) => entry.type === 'agent.decision' && entry.summary));
   } finally {
     await server.stop();
   }

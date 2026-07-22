@@ -57,18 +57,21 @@ export async function runSmoke({ server, color, turns }, fetchImpl = fetch) {
   }));
   const capability = created.capabilities[color];
   let snapshot;
+  let humanTurns = 0;
   for (let moveNumber = 0; moveNumber < turns; moveNumber += 1) {
     snapshot = await waitForHumanTurn(fetchImpl, server, created.matchId, color);
     if (!snapshot.activeTurn) break;
-    await responseJson(await fetchImpl(`${server}/api/matches/${created.matchId}/human-moves`, {
+    const accepted = await responseJson(await fetchImpl(`${server}/api/matches/${created.matchId}/human-moves`, {
       method: 'POST',
       headers: { authorization: `Bearer ${capability}`, 'content-type': 'application/json' },
       body: JSON.stringify({ turnId: snapshot.activeTurn.turnId, moveUci: chooseHumanMove(snapshot) }),
     }));
+    if (accepted.accepted !== true) throw new Error('HUMAN_MOVE_NOT_ACCEPTED');
+    humanTurns += 1;
   }
   snapshot = await responseJson(await fetchImpl(`${server}/api/matches/${created.matchId}`));
   return {
-    humanTurns: turns,
+    humanTurns,
     matchId: created.matchId,
     plies: snapshot.game.ply,
     result: snapshot.game.result,

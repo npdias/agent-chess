@@ -41,6 +41,23 @@ test('human smoke submits exactly requested human turns', async () => {
   assert.equal(result.humanTurns, 2);
 });
 
+test('human smoke reports only accepted moves when match ends early', async () => {
+  let submissions = 0;
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/api/matches')) return new Response(JSON.stringify({ matchId: 'match-1', capabilities: { white: 'secret' } }), { status: 201 });
+    if (url.endsWith('/human-moves')) {
+      submissions += 1;
+      return new Response(JSON.stringify({ accepted: true, moveUci: 'e2e4', moveSan: 'e4' }), { status: 202 });
+    }
+    return new Response(JSON.stringify(submissions
+      ? { status: 'completed', activeTurn: null, game: { legalMoves: [], ply: 1, result: '1-0' } }
+      : { status: 'active', activeTurn: { turnId: 'turn-1', seatKind: 'human', activeColor: 'white' }, game: { legalMoves: [{ uci: 'e2e4' }], ply: 0, result: '*' } }), { status: 200 });
+  };
+  const result = await runSmoke({ server: 'http://smoke.test', color: 'white', turns: 3 }, fetchImpl);
+  assert.equal(submissions, 1);
+  assert.equal(result.humanTurns, 1);
+});
+
 test('human smoke CLI omits capability from exact public output', async () => {
   const capability = 'capability-sentinel';
   let submitted = false;

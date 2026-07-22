@@ -68,7 +68,7 @@ socket.on('message', async (raw) => {
     socket.send(JSON.stringify({ type: 'trace.publish', turnId: activeTurn.turnId, phase: 'choose', summary: `Smoke agent selecting ${candidate.moveUci}.` }));
     socket.send(JSON.stringify({
       type: 'move.submit', turnId: activeTurn.turnId, moveUci: candidate.moveUci,
-      publicTrace: { ...candidate.trace, selectedMove: candidate.moveUci },
+      publicTrace: { ...action.trace, selectedMove: candidate.moveUci },
     }));
     submitted += 1;
     return;
