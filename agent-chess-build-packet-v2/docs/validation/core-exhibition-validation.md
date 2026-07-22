@@ -2,7 +2,7 @@
 
 Status: **PARTIAL — external audit remains blocker.**
 
-Validated code commit: `ecfa6b4cca56ea57a938f92f69bc4fe21fa80400`.
+Validated code commit: `13414398a61883dcbd34dbc98e49a51f816bfb2e`.
 
 ## Environment
 
@@ -14,7 +14,7 @@ Validated code commit: `ecfa6b4cca56ea57a938f92f69bc4fe21fa80400`.
 
 | Command | Result |
 | --- | --- |
-| `npm test` | PASS — 161 tests, 161 pass, 0 fail; 2132.081417 ms. Initial sandbox-only run had 143 pass/17 `listen EPERM`; elevated loopback run is authoritative. |
+| `npm test` | PASS — 162 tests, 162 pass, 0 fail; 3021.007959 ms. Initial sandbox-only run had 143 pass/17 `listen EPERM`; elevated loopback run is authoritative. |
 | `node --test test/stockfish.test.js` | PASS — 2 tests, 2 pass. Added regression covers two sequential real engine starts. |
 | `npm audit --audit-level=high` | BLOCKED — sandbox DNS returned `getaddrinfo ENOTFOUND registry.npmjs.org`; required elevated retry was rejected because it would send dependency metadata to registry. No vulnerability result is claimed. |
 
@@ -38,7 +38,7 @@ Browser initially logged one non-product `GET /favicon.ico` 404. Added explicit 
 
 ## Core matrix artifact
 
-`node bin/validate-core-matrix.mjs http://127.0.0.1:3000` produced tracked [task8-core-matrix.json](evidence/task8-core-matrix.json): public match `3ff4a676-9764-4ce1-a275-f9ca67b23ff5`, 12 plies (6 human, 6 agent), 33 observer state messages, accepted structured agent decision, spectator human-submit `401`, public export PGN present, no capability value/name leak. Separate lifecycle checks: abort-before-move `202`, resign-after-start `202`, public export `200`. Runner output contains only public match ID and booleans/status/counts.
+`node bin/validate-core-matrix.mjs http://127.0.0.1:3000` produced tracked [task8-core-matrix.json](evidence/task8-core-matrix.json): public match `f1e0013d-9d34-4612-a401-d58e4331b6f4`, 12 plies (6 human, 6 agent), 33 observer state messages, accepted structured agent decision, spectator human-submit `401`, public export PGN present, no capability value/name leak. Separate lifecycle checks: abort-before-move `202`, resign-after-start `202`, public export `200`. Runner output contains only public match ID and booleans/status/counts.
 
 The artifact is deterministic API/WebSocket proof, not a manual pointer/touch session. `node --test test/board-interaction.test.js` passed 21/21: source selection, legal targets, click/drag suppression, ownership gating, and promotion-choice fixture (including `e7e8q` / `e7e8r`).
 
@@ -50,10 +50,10 @@ Playwright CLI used snapshots before refs, then local browser checks.
 
 | Evidence | Viewport / dimensions | Findings |
 | --- | --- | --- |
-| [human-engine-desktop.png](screenshots/human-engine-desktop.png) | 1440x900 image; board 610x610; squares 76.25x76.25; rail 440x820; gap 16px; scrollHeight/clientHeight was not retained for this earlier capture | Square board; `e2` selected; legal targets `e3`, `e4`; phase/activity visible. |
-| [human-engine-mobile.png](screenshots/human-engine-mobile.png) | 390x844 image; Human Black vs engine; board 366x366; squares 45.75x45.75; scrollHeight/clientHeight `1899/844` | Live pointer-drag `e7→e5` produced `POST /human-moves` `202`; engine first moved `g1f3`; Black home rank (`h8…a8`) was nearest. Board square/unclipped; horizontal overflow false; phase/activity clear; console 0 errors/warnings. Long activity/move history causes vertical scroll. |
-| [human-agent-spectator.png](screenshots/human-agent-spectator.png) | 1440x900 image; board 610x610; rows 76.25px; gap 16px; scrollHeight/clientHeight `905/900`; horizontal overflow `false` | Public 12-ply human-agent activity visibly includes accepted candidate plus rationale. DOM inspection counted exactly 64 disabled square controls. Screenshot does not itself prove count. |
-| [human-agent-ui-disabled.png](screenshots/human-agent-ui-disabled.png) | Browser-created Human vs My agent; after UI click `e2→e4` | Real UI request returned `202`; current agent turn had 64 disabled and 0 enabled board controls. Console had 0 errors/warnings; network captured create `201`, state `200`, human move `202`. |
+| [human-engine-desktop.png](screenshots/human-engine-desktop.png) | 1440x900 image; board 610x610; squares 76.25x76.25; rail 440x820; gap 16px; scrollHeight/clientHeight `905/900` | Top strip: Computer / Black / Engine / No clock. Bottom strip: Human / White / Human / To move. `e2` selected; legal targets `e3`, `e4`; phase/activity visible; horizontal overflow false. |
+| [human-engine-mobile.png](screenshots/human-engine-mobile.png) | 390x844 image; Human Black vs engine; board 366x366; squares 45.75x45.75; scrollHeight/clientHeight `1899/844` | Top strip: Computer / White / Engine. Bottom strip: Human / Black / Human. Live pointer-drag `e7→e5` produced `POST /human-moves` `202`; engine first moved `g1f3`; Black home rank (`h8…a8`) was nearest. Board square/unclipped; horizontal overflow false; phase/activity clear; console 0 errors/warnings. Long activity/move history causes vertical scroll. |
+| [human-agent-spectator.png](screenshots/human-agent-spectator.png) | 1440x900 image; board 610x610; rows 76.25px; gap 16px; horizontal overflow `false` | Top strip: Matrix Agent / Black / Agent. Bottom strip: Matrix Human / White / Human. Public 12-ply activity visibly includes accepted candidate plus rationale; match GET returned `200`; console had 0 errors/warnings. |
+| [human-agent-ui-disabled.png](screenshots/human-agent-ui-disabled.png) | 1440x900 browser-created Human vs My agent; after UI click `e2→e4` | Top strip: My agent / Black / Agent / To move. Bottom strip: Human / White / Human / No clock. Real UI request returned `202`; current agent turn had 64 disabled and 0 enabled board controls. Console had 0 errors/warnings; network captured create `201`, state `200`, human move `202`. |
 
 After favicon fix, browser console: 0 errors, 0 warnings. Dynamic network requests observed only successful `GET /api/matches/:id` (200); match create POST was 201. Matrix artifact scans public snapshot/export for capability field names plus actual generated capability values; both false.
 
@@ -65,7 +65,7 @@ After favicon fix, browser console: 0 errors, 0 warnings. Dynamic network reques
 - Step 4: PARTIAL. Deterministic API/WebSocket matrix reached 12 plies and public browser screenshot shows accepted candidates/rationale. A real browser-created Human-vs-agent match reached one human UI move; controls then disabled on agent turn (64 disabled, 0 enabled). Connecting a supported external local runner requires the browser-held agent capability; sandbox blocked clipboard/session-storage credential extraction. Do not treat matrix result as browser UI proof.
 - Step 5: PARTIAL; required desktop/mobile screenshots prove 1:1 geometry. Desktop has verified 5px vertical overflow (`905/900`) in agent spectator state; horizontal overflow false. No dark-bar/seam pixel-analysis artifact.
 - Step 6: this report records exact evidence and gaps.
-- Step 7: initial validation commit `ecfa6b4`; this follow-up evidence will be committed separately.
+- Step 7: validated code commit `1341439`; refreshed evidence is committed separately.
 
 ## Known limits / next decision
 
