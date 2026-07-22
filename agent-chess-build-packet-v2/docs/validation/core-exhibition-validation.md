@@ -2,9 +2,9 @@
 
 Status: **PASS — requested code-hardening contracts closed by current evidence.**
 
-Validated hardening baseline: `806694e7c00f5030bcfb76965fdcf65c52ef9473`.
+Validated hardening baseline: `e42fc682b87a89bdd21cd5e5fbff66cbab709130`.
 
-Validation found two UI command/disclosure defects. Both were fixed with literal RED→GREEN tests in the evidence refresh commit containing this report.
+Prior validation found two UI command/disclosure defects. Final bounded review additionally found invalid connector source coercion plus stale terminal error wording; all four have literal RED→GREEN coverage.
 
 ## Environment
 
@@ -16,8 +16,8 @@ Validation found two UI command/disclosure defects. Both were fixed with literal
 
 | Command | Result |
 | --- | --- |
-| `npm test` at Hardening D baseline `806694e` | PASS — 184 tests, 184 pass, 0 fail; 2891.327541 ms. |
-| Hardening D focused proof | PASS — 11/11. Connector provenance 4/4 (49.099667 ms); adapter status 1/1 (169.967666 ms); UI disclosure 1/1 (106.958458 ms); terminal failure 5/5 (486.528833 ms). |
+| `npm test` at Hardening D baseline `e42fc68` | PASS — 187 tests, 187 pass, 0 fail; 2765.926083 ms. |
+| Hardening D focused proof | PASS — 15/15; 469.221917 ms. Connector provenance 7/7; adapter status 1/1; UI disclosure/failure labels 2/2; terminal failure 5/5. |
 | Focused server hardening group | PASS — 9/9; 603.477 ms. Covers engine metadata separation, private auth/events, guidance suppression, quoted connector, terminal delivery/reconnect/race, engine resign races. |
 | Focused PGN group | PASS — 2/2; 144.42175 ms. Covers resignation/failure headers plus draw result/termination. |
 | Focused UI group | PASS — 3/3; 85.139125 ms. Covers zsh path quoting, npm echo suppression, humanized disclosure labels. |
@@ -32,8 +32,8 @@ Exact focused test names, counts, durations, browser summary: [task8-hardening-f
 
 ## Hardening D proof
 
-- Provenance: `agent_reported`, `provider_summary`, `adapter_generated` survive their intended connector/protocol paths; absent command source defaults to `agent_reported`; demo moves plus precommit status use `adapter_generated`; provider summary reaches public snapshot unchanged.
-- UI: committed `agent.decision` renders label `Decision` while disclosure provenance remains separate.
+- Provenance: `agent_reported`, `provider_summary`, `adapter_generated` survive their intended connector/protocol paths; absent/null/empty command source defaults to `agent_reported`; explicit unsupported source fails locally with `INVALID_TRACE_SOURCE` before server/UI; demo moves plus precommit status use `adapter_generated`; provider summary reaches public snapshot unchanged.
+- UI: committed `agent.decision` renders label `Decision` while disclosure provenance remains separate; nonrecoverable or failed engine activity renders `Match failed`.
 - Decision deadline failure: `error` precedes `game.end`; terminal payload reports `status: failed`, `termination: failure`, `failureCode: AGENT_FAILURE`; reference connector exits `1`; raw `Decision deadline exceeded` diagnostic is absent.
 - Engine failure: `error` precedes `game.end`; terminal payload reports `status: failed`, `termination: failure`, `failureCode: ENGINE_FAILURE`; reference connector exits `1`; injected raw engine diagnostic is absent.
 - Exact test names, grouped counts, assertions: [task8-hardening-focused.json](evidence/task8-hardening-focused.json).

@@ -1,5 +1,5 @@
 {
-  "validatedCodeCommit": "806694e7c00f5030bcfb76965fdcf65c52ef9473",
+  "validatedCodeCommit": "e42fc682b87a89bdd21cd5e5fbff66cbab709130",
   "baselineSuite": {
     "tests": 179,
     "pass": 179,
@@ -13,32 +13,37 @@
     "durationMs": 2504.364292
   },
   "hardeningDFinalSuite": {
-    "tests": 184,
-    "pass": 184,
+    "tests": 187,
+    "pass": 187,
     "fail": 0,
-    "durationMs": 2891.327541
+    "durationMs": 2765.926083
   },
   "hardeningDFocused": {
-    "tests": 11,
-    "pass": 11,
+    "tests": 15,
+    "pass": 15,
     "fail": 0,
     "groups": {
-      "connectorProvenance": { "tests": 4, "pass": 4, "durationMs": 49.099667 },
-      "adapterStatus": { "tests": 1, "pass": 1, "durationMs": 169.967666 },
-      "uiDisclosure": { "tests": 1, "pass": 1, "durationMs": 106.958458 },
-      "terminalFailure": { "tests": 5, "pass": 5, "durationMs": 486.528833 }
+      "connectorProvenance": { "tests": 7, "pass": 7, "durationMs": 31.745541 },
+      "adapterStatus": { "tests": 1, "pass": 1, "durationMs": 16.778583 },
+      "uiDisclosure": { "tests": 2, "pass": 2, "durationMs": 0.993083 },
+      "terminalFailure": { "tests": 5, "pass": 5, "durationMs": 386.869375 }
     },
     "assertions": {
       "preservedSources": ["agent_reported", "provider_summary", "adapter_generated"],
       "absentSourceDefaultsTo": "agent_reported",
+      "explicitUnsupportedSource": { "code": "INVALID_TRACE_SOURCE", "reachesServerOrUi": false },
       "demoAndStatusSource": "adapter_generated",
       "uiAgentDecisionLabel": "Decision",
+      "uiNonrecoverableFailureLabel": "Match failed",
       "decisionDeadline": { "status": "failed", "termination": "failure", "failureCode": "AGENT_FAILURE", "errorBeforeGameEnd": true, "connectorExitCode": 1, "rawDiagnosticLeak": false },
       "engineFailure": { "status": "failed", "termination": "failure", "failureCode": "ENGINE_FAILURE", "errorBeforeGameEnd": true, "connectorExitCode": 1, "rawDiagnosticLeak": false }
     },
     "names": [
       "preserves bounded structured decision trace fields from command output",
       "preserves an allowed command trace source and defaults absent source to agent reported",
+      "defaults only absent, null, or empty command trace source to agent reported",
+      "rejects an explicit unsupported command trace source",
+      "rejects unsupported trace provenance returned by a command before submission",
       "demo move trace names its selected legal candidate",
       "attaches public trace to submitted move and binds selected move",
       "publishes only sanitized status progress before a move",
@@ -47,7 +52,8 @@
       "preserves provider summary provenance through connector protocol server and public snapshot",
       "reference connector exits nonzero after stable decision-deadline failure",
       "reference connector exits nonzero on engine failure without raw diagnostics",
-      "pauses after an engine failure and stores a visible recoverable error"
+      "fails after an engine error and stores a visible nonrecoverable error",
+      "labels connector status and visible engine errors without claiming agent authorship"
     ]
   },
   "serverFocused": {
