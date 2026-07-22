@@ -319,7 +319,15 @@ export function createAgentChessServer({
         skillLevel: session.engine.skillLevel,
       };
       const hasEngine = Object.values(session.seats).some((seat) => seat.kind === 'engine');
-      const engine = hasEngine ? await stockfishFactory(engineConfig) : null;
+      let engine = null;
+      if (hasEngine) {
+        try {
+          engine = await stockfishFactory(engineConfig);
+        } catch {
+          sendJson(response, 503, { error: 'ENGINE_UNAVAILABLE', message: 'Engine unavailable' });
+          return true;
+        }
+      }
       const record = {
         session,
         engine,

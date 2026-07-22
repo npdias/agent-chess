@@ -45,6 +45,7 @@ let activeTurn = null;
 let commandRounds = 0;
 
 function publish(turnId, trace) {
+  if (activeTurn?.mode === 'private_eval') return;
   socket.send(JSON.stringify({ type: 'trace.publish', turnId, ...trace }));
 }
 

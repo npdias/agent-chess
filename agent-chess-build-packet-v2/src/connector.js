@@ -105,7 +105,7 @@ export function createAgentRequest(turn, action) {
   if (action?.requestAllMoves) return { type: 'moves.list_all', turnId: turn.turnId };
   if (action?.moveUci) return {
     type: 'move.submit', turnId: turn.turnId, moveUci: action.moveUci,
-    ...(action.trace ? { publicTrace: { ...action.trace, selectedMove: action.moveUci } } : {}),
+    ...(action.trace && turn.mode !== 'private_eval' ? { publicTrace: { ...action.trace, selectedMove: action.moveUci } } : {}),
   };
   throw new Error('INVALID_AGENT_ACTION');
 }

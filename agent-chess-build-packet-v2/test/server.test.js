@@ -246,6 +246,9 @@ test('private_eval suppresses agent decision traces from state and export', asyn
     const messages = collectMessages(socket);
     await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
     const turn = await messages.next((message) => message.type === 'turn.start');
+    socket.send(JSON.stringify({ type: 'trace.publish', turnId: turn.turnId, summary: 'private reasoning' }));
+    const rejected = await messages.next((message) => message.type === 'move.rejected');
+    assert.equal(rejected.code, 'TRACE_NOT_ALLOWED');
     socket.send(JSON.stringify({ type: 'move.submit', turnId: turn.turnId, moveUci: 'e2e4', publicTrace: {
       summary: 'private reasoning', candidates: [{ uci: 'e2e4', note: 'secret' }], selectedMove: 'e2e4',
     } }));
@@ -257,6 +260,26 @@ test('private_eval suppresses agent decision traces from state and export', asyn
     assert.equal(JSON.stringify({ snapshot, exported }).includes('private reasoning'), false);
     assert.equal(snapshot.activity.some((entry) => entry.type === 'agent.decision'), false);
     socket.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('engine startup failures use a stable public error without factory diagnostics', async () => {
+  const secret = 'factory-startup-secret';
+  const server = createAgentChessServer({ stockfishFactory: async () => { throw new Error(secret); } });
+  const address = await server.start(0);
+  try {
+    const response = await fetch(`${address.httpUrl}/api/matches`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'exhibition', visibility: 'public', seats: {
+        white: { kind: 'engine', name: 'Engine' }, black: { kind: 'human', name: 'Human' },
+      } }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 503);
+    assert.deepEqual(body, { error: 'ENGINE_UNAVAILABLE', message: 'Engine unavailable' });
+    assert.equal(JSON.stringify(body).includes(secret), false);
   } finally {
     await server.stop();
   }

@@ -99,6 +99,12 @@ test('attaches public trace to submitted move and binds selected move', () => {
   });
 });
 
+test('private_eval move requests suppress public trace attachment', () => {
+  assert.deepEqual(createAgentRequest({ turnId: 'private-turn', mode: 'private_eval' }, {
+    moveUci: 'e2e4', trace: { summary: 'private reasoning', selectedMove: 'e2e4' },
+  }), { type: 'move.submit', turnId: 'private-turn', moveUci: 'e2e4' });
+});
+
 test('rejects a malformed or uncached candidate before WebSocket submission', () => {
   assert.throws(() => validateLocalCandidate(turn, 'e2e5'), /MOVE_NOT_LEGAL/);
   assert.throws(() => validateLocalCandidate(turn, 'e2-e4'), /MOVE_NOT_LEGAL/);
