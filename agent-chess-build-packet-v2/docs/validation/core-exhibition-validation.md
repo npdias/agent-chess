@@ -1,8 +1,8 @@
 # Core exhibition validation
 
-Status: **PARTIAL — no-go for clock/polish acceptance.**
+Status: **PARTIAL — external audit remains blocker.**
 
-Validation baseline: `93fd7dc8b9f515738d1b83939de2aad038f5eddf`.
+Validated code commit: `ecfa6b4cca56ea57a938f92f69bc4fe21fa80400`.
 
 ## Environment
 
@@ -16,7 +16,7 @@ Validation baseline: `93fd7dc8b9f515738d1b83939de2aad038f5eddf`.
 | --- | --- |
 | `npm test` | PASS — 161 tests, 161 pass, 0 fail; 2132.081417 ms. Initial sandbox-only run had 143 pass/17 `listen EPERM`; elevated loopback run is authoritative. |
 | `node --test test/stockfish.test.js` | PASS — 2 tests, 2 pass. Added regression covers two sequential real engine starts. |
-| `npm audit --audit-level=high` | NOT RUN TO COMPLETION — sandbox DNS returned `getaddrinfo ENOTFOUND registry.npmjs.org`; elevated audit was rejected because it would send dependency metadata to registry. No vulnerability result is claimed. |
+| `npm audit --audit-level=high` | BLOCKED — sandbox DNS returned `getaddrinfo ENOTFOUND registry.npmjs.org`; required elevated retry was rejected because it would send dependency metadata to registry. No vulnerability result is claimed. |
 
 ## Smoke matrix
 
@@ -36,28 +36,34 @@ White smoke passed, then Black creation returned `HTTP_503`. Server stderr showe
 
 Browser initially logged one non-product `GET /favicon.ico` 404. Added explicit empty favicon link; reload had 0 console errors/warnings.
 
+## Core matrix artifact
+
+`node output/playwright/task8-core-matrix.mjs` produced [task8-core-matrix.json](../../output/playwright/task8-core-matrix.json): public human-versus-agent match `1f995fbd-d127-46eb-8cf1-326a3f4cf31e`, 12 plies (6 human, 6 agent), 33 observer state messages, accepted structured agent decision, spectator human-submit `401`, public export PGN present, no capability value/name leak. Separate lifecycle checks: abort-before-move `202`, resign-after-start `202`, public export `200`.
+
+The artifact is deterministic API/WebSocket proof, not a manual pointer/touch session. `node --test test/board-interaction.test.js` passed 21/21: source selection, legal targets, click/drag suppression, ownership gating, and promotion-choice fixture (including `e7e8q` / `e7e8r`).
+
 ## Browser evidence
 
 Playwright CLI used snapshots before refs, then local browser checks.
 
 | Evidence | Viewport / dimensions | Findings |
 | --- | --- | --- |
-| [human-engine-desktop.png](screenshots/human-engine-desktop.png) | 1440x900 image; board 610x610; squares 76.25x76.25; rail 440x820; board-to-rail gap 16px | Square, seam-free board; human selected `e2`; authoritative legal targets `e3`, `e4`; phase `Observe`; activity visible. No board clipping or horizontal overflow. Page vertical scroll exists: 841px stage plus chrome exceeds viewport. |
-| [human-engine-mobile.png](screenshots/human-engine-mobile.png) | 390x844 image; board 366x366; squares 45.75x45.75; rail 366px wide | Board square/untrimmed; no horizontal overflow; phase above board; activity directly below board in document flow. Vertical scrolling required to reach rail. |
-| [human-agent-spectator.png](screenshots/human-agent-spectator.png) | 1440x900 image | Public generic-agent review shows structured connector/system activity and candidates. All 64 square buttons are disabled; URL has only `match`, no capability. |
+| [human-engine-desktop.png](screenshots/human-engine-desktop.png) | 1440x900 image; board 610x610; squares 76.25x76.25; rail 440x820; gap 16px; scrollHeight/clientHeight was not retained for this earlier capture | Square board; `e2` selected; legal targets `e3`, `e4`; phase/activity visible. |
+| [human-engine-mobile.png](screenshots/human-engine-mobile.png) | 390x844 image; board 366x366; squares 45.75x45.75; rail 366px wide | Board square/untrimmed; no horizontal overflow; phase above board; activity below board. |
+| [human-agent-spectator.png](screenshots/human-agent-spectator.png) | 1440x900 image; board 610x610; rows 76.25px; gap 16px; scrollHeight/clientHeight `905/900`; horizontal overflow `false` | Public 12-ply human-agent activity visibly includes accepted candidate plus rationale. DOM inspection counted exactly 64 disabled square controls. Screenshot does not itself prove count. |
 
-After favicon fix, browser console: 0 errors, 0 warnings. Dynamic network requests observed only successful `GET /api/matches/:id` (200); match create POST was 201. Public snapshot and `/export` were checked for `capabilities`, `seatToken`, `ticket`, `authorization`, and `capability` fields: no matches.
+After favicon fix, browser console: 0 errors, 0 warnings. Dynamic network requests observed only successful `GET /api/matches/:id` (200); match create POST was 201. Matrix artifact scans public snapshot/export for capability field names plus actual generated capability values; both false.
 
 ## Plan comparison
 
 - Step 1: install PASS; full tests PASS; audit BLOCKED externally.
 - Step 2: PASS; both human colors and generic public agent reached required three accepted turns.
-- Step 3: PARTIAL; White visual human input/legal selection proved. Black UI orientation, drag, touch target measurement, promotion fixture, abort/resign/export/PGN/observer complete-flow proof were not all run.
-- Step 4: PARTIAL; generic public agent 6 plies plus spectator activity/authority proof passed. Required human-versus-agent ten-ply live proof was not run.
-- Step 5: PARTIAL; required desktop/mobile screenshots pass board geometry checks. Desktop one-viewport fit fails due vertical page overflow; rail needs scrolling on mobile by design.
+- Step 3: PARTIAL; click plus legal target browser proof, deterministic drag/promotion fixture proof, abort/resign/export/PGN/observer matrix proof. Manual Black browser orientation/touch-device proof still absent.
+- Step 4: PASS for deterministic human-agent 12-ply live API/WebSocket matrix plus public browser activity screenshot; no private rationale is exposed.
+- Step 5: PARTIAL; required desktop/mobile screenshots prove 1:1 geometry. Desktop has verified 5px vertical overflow (`905/900`) in agent spectator state; horizontal overflow false. No dark-bar/seam pixel-analysis artifact.
 - Step 6: this report records exact evidence and gaps.
-- Step 7: validation evidence is staged for commit after final full-suite rerun.
+- Step 7: initial validation commit `ecfa6b4`; this follow-up evidence will be committed separately.
 
 ## Known limits / next decision
 
-No-go for follow-on clock/polish acceptance until audit completes in an approved network context and missing manual proof matrix closes. Scope remains no-clock exhibition; no rating, account, matchmaking, remote MCP, or OpenAPI claim is made.
+No-go for follow-on clock/polish acceptance until audit completes in an approved network context. Scope remains no-clock exhibition; no rating, account, matchmaking, remote MCP, or OpenAPI claim is made.
