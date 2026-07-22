@@ -509,11 +509,6 @@ async function sendSteering(event) {
   }
 }
 
-function selectTab(name) {
-  document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === name));
-  document.querySelectorAll('.tab-content').forEach((panel) => panel.classList.toggle('active', panel.id === `tab-${name}`));
-}
-
 export function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
 }
@@ -571,7 +566,6 @@ function boot() {
     const url = URL.createObjectURL(new Blob([await response.text()], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = `${currentMatch.id}.json`; link.click(); URL.revokeObjectURL(url);
   });
-  document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => selectTab(tab.dataset.tab)));
   const matchId = new URL(location.href).searchParams.get('match');
   if (matchId) loadMatch(matchId);
 }

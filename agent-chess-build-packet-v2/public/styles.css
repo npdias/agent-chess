@@ -182,13 +182,13 @@ dialog::backdrop { background: #0009; }
 .promotion-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 16px 0; }
 .promotion-actions button { padding: 10px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--text); background: var(--surface-raised); }
 .lifecycle-panel { display: flex; justify-content: space-between; gap: 8px; }
-.focus-mode .topbar, .focus-mode .control-rail .panel:not(.activity-panel):not(.lifecycle-panel) { display: none; }
+.focus-mode .topbar, .focus-mode .control-rail .panel:not(.technical-activity):not(.lifecycle-panel) { display: none; }
 .focus-mode .match-layout { grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); }
 @media (min-width: 1021px) {
   .topbar { height: 48px; }
   .brand-mark { width: 28px; height: 28px; }
   .app-shell { padding: 8px 18px; }
-  .match-layout { --live-board-size: min(820px, calc(100dvh - 220px), calc(100vw - 492px)); grid-template-columns: var(--live-board-size) minmax(360px, 440px); gap: 16px; justify-content: center; }
+  .match-layout { --desktop-fixed-chrome: 260px; --live-board-size: min(820px, calc(100dvh - var(--desktop-fixed-chrome)), calc(100vw - 492px)); grid-template-columns: var(--live-board-size) minmax(360px, 440px); gap: 16px; justify-content: center; }
   .board-stage { width: var(--live-board-size); }
   .match-context { min-height: 30px; margin-bottom: 0; }
   .match-context .eyebrow { margin-bottom: 1px; font-size: .62rem; }

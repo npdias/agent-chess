@@ -212,7 +212,7 @@ test('allows the local connector command to shrink on narrow screens', async () 
 test('centers a height-bound desktop board beside an equal-height activity rail', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*220px\),\s*calc\(100vw\s*-\s*492px\)\)/);
+  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*var\(--desktop-fixed-chrome\)\),\s*calc\(100vw\s*-\s*492px\)\)/);
   assert.match(css, /\.match-layout\s*\{[^}]*grid-template-columns:\s*var\(--live-board-size\)\s+minmax\(360px,\s*440px\)[^}]*justify-content:\s*center/);
   assert.match(css, /\.board-stage\s*\{[^}]*width:\s*var\(--live-board-size\)/);
   assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*150px\)[^}]*overflow-y:\s*auto/);
@@ -222,7 +222,7 @@ test('centers a height-bound desktop board beside an equal-height activity rail'
 test('caps the aligned desktop board and derives rail height from it at every desktop height', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-  assert.match(css, /@media \(min-width: 1021px\)\s*\{[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*220px\),\s*calc\(100vw\s*-\s*492px\)\)/);
+  assert.match(css, /@media \(min-width: 1021px\)\s*\{[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*var\(--desktop-fixed-chrome\)\),\s*calc\(100vw\s*-\s*492px\)\)/);
   assert.doesNotMatch(css, /@media \(min-width: 1021px\) and \(max-height: 1250px\)/);
   assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*150px\)/);
 });
@@ -323,9 +323,28 @@ test('uses spectator-first hierarchy while preserving match controls', async () 
   assert.match(app, /copy-agent-link.*addEventListener/s);
   assert.match(app, /connector\.classList\.toggle\('connected'/);
   assert.doesNotMatch(html, /id="connect-command">[^<]+ticket=/);
-  assert.match(css, /--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*220px\)/);
+  assert.match(css, /--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*var\(--desktop-fixed-chrome\)\)/);
   assert.match(css, /\.control-rail\s*\{[^}]*overflow-y:\s*auto/);
   assert.match(css, /\.technical-activity/);
   assert.match(css, /@media \(max-width: 1020px\)[\s\S]*?\.control-rail\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.connector-actions button\s*\{[^}]*min-height:\s*44px/);
+});
+
+test('keeps structured agent activity visible in focus mode', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.focus-mode \.control-rail \.panel:not\(\.technical-activity\):not\(\.lifecycle-panel\)/);
+});
+
+test('budgets full desktop board stack within a 720px viewport', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+  const chrome = Number(css.match(/--desktop-fixed-chrome:\s*(\d+)px/)?.[1]);
+  assert.equal(chrome, 260);
+  assert.equal(720 - chrome + chrome <= 720, true);
+  assert.match(css, /--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*var\(--desktop-fixed-chrome\)\),\s*calc\(100vw\s*-\s*492px\)\)/);
+});
+
+test('removes obsolete tab controller after native details migration', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(app, /function selectTab\(/);
+  assert.doesNotMatch(app, /querySelectorAll\('\.tab'\)/);
 });
