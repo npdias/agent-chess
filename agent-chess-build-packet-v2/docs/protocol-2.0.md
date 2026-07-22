@@ -19,7 +19,13 @@ Create an exhibition with generic seats. `kind` is `human`, `agent`, or `engine`
 }
 ```
 
-`POST /api/matches` returns `{ "matchId", "capabilities", "uiPath" }`. Capability is creator-owned secret, returned once; retain it only in caller memory or browser session storage. It authenticates human HTTP actions or agent ticket exchange. It never appears in public snapshot/export. Agent ticket exchange is `POST /api/agent-sessions` using `Authorization: Bearer CAPABILITY`; response is `{ "ticket", "wsPath", "expiresAt" }`, where `wsPath` is one-use and `expiresAt` is 60 seconds ahead. Raw capability never appears in WebSocket URL.
+`POST /api/matches` returns `{ "matchId", "capabilities", "uiPath" }`. Capability is creator-owned secret, returned once; retain it only in caller memory or browser session storage. It authenticates human HTTP actions or agent ticket exchange. It never appears in public snapshot/export. Agent ticket exchange is `POST /api/agent-sessions` using `Authorization: Bearer CAPABILITY`; response is `{ "ticket", "wsPath", "joinPath", "expiresAt" }`, where `wsPath` and `joinPath` contain same one-use ticket and `expiresAt` is 60 seconds ahead. Raw capability never appears in WebSocket URL.
+
+## Self-describing agent invitation
+
+Agent harnesses need HTTP plus WebSocket support. Fetch `GET /agent/join?ticket=ONE_USE_TICKET` before connecting. Valid invitation returns `200`, `Cache-Control: no-store`, JSON contract fields `service`, `protocolVersion`, `match`, `seat`, `security`, `connection`, `instructions`, `messageFlow`, and `publicTrace`. `connection.wsUrl` is absolute, built from invitation request protocol and host (`http:` maps to `ws:`, `https:` maps to `wss:`). GET never consumes ticket; first WebSocket connection consumes it. Expired or unknown ticket returns `410` and cannot connect.
+
+Invitation URL is secret. It expires, is single-use for connection, and must not be copied into logs, snapshots, exports, telemetry, or public trace. Local harness retains credentials, prompts, private memory, local files, and raw reasoning. Contract action order: open WebSocket; wait for `match.start` plus `turn.start`; optionally request probes; publish only sanitized status; submit legal UCI plus bounded `publicTrace`; handle accepted, rejected, and end.
 
 Legacy creation payloads without `seats` map to agent-versus-engine: `agentColor` maps to agent seat color, `agentName` to agent name, `skillLevel`/`movetimeMs` to engine config, `steeringMode` stays supported. Legacy response additionally has `seatToken` and `agentWsPath`; generic callers must use `capabilities` plus ticket exchange instead. Legacy compatibility trace is optional.
 

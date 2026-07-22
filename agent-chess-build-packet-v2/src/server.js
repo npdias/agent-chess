@@ -34,11 +34,12 @@ function rejectedTurnId(raw) {
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PUBLIC_DIR = join(ROOT, 'public');
 
-function sendJson(response, status, value) {
+function sendJson(response, status, value, headers = {}) {
   const body = JSON.stringify(value);
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'content-length': Buffer.byteLength(body),
+    ...headers,
   });
   response.end(body);
 }
@@ -104,6 +105,7 @@ function contentType(path) {
 export function createAgentChessServer({
   stockfishFactory = (options) => StockfishEngine.start(options),
   publicDir = PUBLIC_DIR,
+  ticketNow = () => Date.now(),
 } = {}) {
   const matches = new Map();
   const seatByToken = new Map();
@@ -112,6 +114,41 @@ export function createAgentChessServer({
   const agentWss = new WebSocketServer({ noServer: true });
   const eventWss = new WebSocketServer({ noServer: true });
   let httpServer;
+  function removeExpiredTickets() {
+    for (const [ticket, binding] of seatByTicket) {
+      if (binding.expiresAt <= ticketNow()) seatByTicket.delete(ticket);
+    }
+  }
+
+  function invitationContract(request, binding, ticket) {
+    const protocol = request.socket.encrypted ? 'wss:' : 'ws:';
+    const host = request.headers.host ?? 'localhost';
+    return {
+      service: { name: 'Agent Chess', version: packageJson.version },
+      protocolVersion: '2.0',
+      match: { id: binding.matchId, mode: binding.record.session.mode, visibility: binding.record.session.visibility },
+      seat: { color: binding.color, kind: binding.kind, name: binding.record.session.seats[binding.color].name },
+      security: {
+        secretHandling: 'This URL is secret, expires, and remains single-use for connection. Keep credentials, prompts, private memory, local files, and raw reasoning local.',
+        expiresAt: new Date(binding.expiresAt).toISOString(),
+      },
+      connection: { wsUrl: `${protocol}//${host}/agent?ticket=${encodeURIComponent(ticket)}` },
+      instructions: {
+        actionOrder: [
+          'Open WebSocket.', 'Wait for match.start and turn.start.', 'Optionally request probes.',
+          'Publish only sanitized status.', 'Submit legal UCI plus bounded publicTrace.', 'Handle accepted, rejected, and end.',
+        ],
+      },
+      messageFlow: {
+        receive: ['match.start', 'turn.start', 'move.accepted', 'move.rejected', 'game.end'],
+        send: ['moves.list', 'moves.list_all', 'history.list', 'move.validate', 'trace.publish', 'move.submit'],
+      },
+      publicTrace: {
+        requiredForPublicExhibition: binding.record.session.mode === 'exhibition' && binding.record.session.visibility === 'public',
+        limit: 'Submit concise structured status only; never raw reasoning.',
+      },
+    };
+  }
   function bearer(request) {
     const value = request.headers.authorization;
     return typeof value === 'string' && /^Bearer .+$/i.test(value) ? value.slice(7) : null;
@@ -421,15 +458,27 @@ export function createAgentChessServer({
     }
 
     if (request.method === 'POST' && url.pathname === '/api/agent-sessions') {
-      for (const [ticket, binding] of seatByTicket) {
-        if (binding.expiresAt < Date.now()) seatByTicket.delete(ticket);
-      }
+      removeExpiredTickets();
       const binding = seatByToken.get(bearer(request));
       if (!binding || binding.kind !== 'agent') return sendJson(response, 401, { error: 'UNAUTHORIZED' }), true;
       const ticket = randomBytes(24).toString('base64url');
-      const expiresAt = new Date(Date.now() + 60_000);
-      seatByTicket.set(ticket, { ...binding, expiresAt: expiresAt.getTime() });
-      sendJson(response, 201, { ticket, wsPath: `/agent?ticket=${encodeURIComponent(ticket)}`, expiresAt: expiresAt.toISOString() });
+      const expiresAt = new Date(ticketNow() + 60_000);
+      seatByTicket.set(ticket, { ...binding, matchId: binding.record.session.id, expiresAt: expiresAt.getTime() });
+      sendJson(response, 201, {
+        ticket,
+        wsPath: `/agent?ticket=${encodeURIComponent(ticket)}`,
+        joinPath: `/agent/join?ticket=${encodeURIComponent(ticket)}`,
+        expiresAt: expiresAt.toISOString(),
+      });
+      return true;
+    }
+
+    if (request.method === 'GET' && url.pathname === '/agent/join') {
+      removeExpiredTickets();
+      const ticket = url.searchParams.get('ticket');
+      const binding = ticket && seatByTicket.get(ticket);
+      if (!binding) return sendJson(response, 410, { error: 'INVITATION_EXPIRED' }, { 'cache-control': 'no-store' }), true;
+      sendJson(response, 200, invitationContract(request, binding, ticket), { 'cache-control': 'no-store' });
       return true;
     }
 
@@ -543,15 +592,13 @@ export function createAgentChessServer({
       httpServer.on('upgrade', (request, socket, head) => {
         const url = new URL(request.url, `http://${request.headers.host ?? 'localhost'}`);
         if (url.pathname === '/agent') {
-          for (const [ticket, binding] of seatByTicket) {
-            if (binding.expiresAt < Date.now()) seatByTicket.delete(ticket);
-          }
+          removeExpiredTickets();
           let binding;
           const ticket = url.searchParams.get('ticket');
           if (ticket) {
             binding = seatByTicket.get(ticket);
             seatByTicket.delete(ticket);
-            if (!binding || binding.expiresAt < Date.now()) return socket.destroy();
+            if (!binding || binding.expiresAt <= ticketNow()) return socket.destroy();
           } else {
             const legacyToken = url.searchParams.get('token');
             binding = seatByToken.get(legacyToken);

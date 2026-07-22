@@ -302,6 +302,69 @@ test('agent capability exchanges once for a sixty-second ticket', async () => {
   }
 });
 
+test('agent invitation describes a valid single-use connection without leaking its secret publicly', async () => {
+  let ticketNow = Date.now();
+  const server = createAgentChessServer({
+    stockfishFactory: async () => new FakeStockfish(),
+    ticketNow: () => ticketNow,
+  });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const session = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    });
+    assert.equal(session.status, 201);
+    const ticket = await session.json();
+    assert.equal(ticket.joinPath, `/agent/join?ticket=${encodeURIComponent(ticket.ticket)}`);
+
+    const invite = await fetch(`${address.httpUrl}${ticket.joinPath}`);
+    assert.equal(invite.status, 200);
+    assert.equal(invite.headers.get('cache-control'), 'no-store');
+    const contract = await invite.json();
+    assert.deepEqual(Object.keys(contract).sort(), [
+      'connection', 'instructions', 'match', 'messageFlow', 'protocolVersion', 'publicTrace', 'seat', 'security', 'service',
+    ]);
+    assert.equal(contract.protocolVersion, '2.0');
+    assert.equal(contract.match.id, created.matchId);
+    assert.equal(contract.seat.color, 'white');
+    assert.equal(contract.connection.wsUrl, `${address.wsUrl}${ticket.wsPath}`);
+    assert.match(contract.instructions.actionOrder.join(' '), /open WebSocket.*match.start.*turn.start.*submit legal UCI/i);
+    assert.match(contract.security.secretHandling, /secret.*expires.*single-use/i);
+
+    const repeatedInvite = await fetch(`${address.httpUrl}${ticket.joinPath}`);
+    assert.equal(repeatedInvite.status, 200);
+    const first = new WebSocket(contract.connection.wsUrl);
+    await new Promise((resolve, reject) => { first.once('open', resolve); first.once('error', reject); });
+    const expiringInvitation = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    }).then((response) => response.json());
+    const expiringSocket = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    }).then((response) => response.json());
+    ticketNow = Date.parse(expiringInvitation.expiresAt);
+    assert.equal((await fetch(`${address.httpUrl}${expiringInvitation.joinPath}`)).status, 410);
+    const expired = new WebSocket(`${address.wsUrl}${expiringSocket.wsPath}`);
+    await new Promise((resolve) => { expired.once('close', resolve); expired.once('error', resolve); });
+    ticketNow = Date.now();
+    const second = new WebSocket(contract.connection.wsUrl);
+    await new Promise((resolve) => { second.once('close', resolve); second.once('error', resolve); });
+    const unknown = await fetch(`${address.httpUrl}/agent/join?ticket=unknown`);
+    assert.equal(unknown.status, 410);
+    const snapshot = await getMatch(address, created.matchId);
+    const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`).then((response) => response.json());
+    const publicData = JSON.stringify({ snapshot, exported });
+    assert.equal(publicData.includes(ticket.ticket), false);
+    assert.equal(publicData.includes(ticket.joinPath), false);
+    first.close();
+  } finally {
+    await server.stop();
+  }
+});
+
 test('browser copied quoted --path command joins without printing its ticket', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);
