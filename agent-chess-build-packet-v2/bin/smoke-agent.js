@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import WebSocket from 'ws';
-import { chooseDemoMove } from '../src/connector.js';
+import { cacheProbe, chooseDemoAction, validateLocalCandidate } from '../src/connector.js';
 
 function arg(name, fallback) {
   const index = process.argv.indexOf(`--${name}`);
@@ -33,6 +33,7 @@ const socket = new WebSocket(wsUrl);
 let submitted = 0;
 let settled = false;
 let verifying = false;
+let activeTurn = null;
 const timeout = setTimeout(() => finish(new Error('Smoke test timed out')), 30_000);
 
 function finish(error) {
@@ -51,8 +52,18 @@ socket.on('message', async (raw) => {
   const message = JSON.parse(raw.toString());
   if (message.type === 'turn.start') {
     if (submitted >= maxTurns) return;
-    const moveUci = chooseDemoMove(message);
-    socket.send(JSON.stringify({ type: 'move.submit', turnId: message.turnId, moveUci }));
+    activeTurn = { ...message, probeResults: {} };
+    socket.send(JSON.stringify({ type: 'trace.publish', turnId: activeTurn.turnId, phase: 'evaluate', summary: 'Smoke agent evaluating.' }));
+    const action = chooseDemoAction(activeTurn);
+    socket.send(JSON.stringify({ type: 'moves.list', turnId: activeTurn.turnId, square: action.probeSquare }));
+    return;
+  }
+  if (message.type === 'moves.list.result' && activeTurn?.turnId === message.turnId) {
+    activeTurn = cacheProbe(activeTurn, message);
+    const action = chooseDemoAction(activeTurn);
+    const candidate = validateLocalCandidate(activeTurn, action.moveUci);
+    socket.send(JSON.stringify({ type: 'trace.publish', turnId: activeTurn.turnId, phase: 'choose', summary: `Smoke agent selecting ${candidate.moveUci}.` }));
+    socket.send(JSON.stringify({ type: 'move.submit', turnId: activeTurn.turnId, moveUci: candidate.moveUci }));
     submitted += 1;
     return;
   }

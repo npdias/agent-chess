@@ -8,8 +8,13 @@ const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const turn = JSON.parse(Buffer.concat(chunks).toString('utf8'));
 
-const legalMoves = turn.legalMoves.map(({ uci, san }) => ({ uci, san }));
-const prompt = `You are a chess-playing agent. Select one move from legalMoves for this position.\n\nPosition FEN: ${turn.fen}\nMoves played: ${(turn.movesUci ?? []).join(' ') || '(start)'}\nYour color: ${turn.agentColor}\nOptional guidance: ${turn.steering?.guidance ?? '(none)'}\nLegal moves: ${JSON.stringify(legalMoves)}\n\nDo not use tools. Return exactly JSON: {"moveUci":"legal UCI move","summary":"one short public chess reason"}.`;
+const probeResults = Object.values(turn.probeResults ?? {}).flatMap((result) => result.moves ?? []);
+const requestAllMoves = turn.requestAllMoves === true;
+const legalMoves = requestAllMoves ? (turn.allMoves ?? []) : probeResults;
+const movablePieces = turn.positionStatus?.movablePieces ?? [];
+const prompt = legalMoves.length
+  ? `You are a chess-playing agent. Select one move from cached legalMoves for this position.\n\nPosition FEN: ${turn.fen}\nRecent moves: ${(turn.recentMoves ?? []).map((move) => move.uci).join(' ') || '(start)'}\nYour color: ${turn.agentColor}\nCached legal moves: ${JSON.stringify(legalMoves)}\n\nReturn exactly JSON: {"moveUci":"cached UCI move","summary":"one short public chess reason"}.`
+  : `You are a chess-playing agent. Choose one movable origin square to probe.\n\nPosition FEN: ${turn.fen}\nMovable pieces: ${JSON.stringify(movablePieces)}\n\nReturn exactly JSON: {"probeSquare":"origin square","summary":"one short public chess reason"}.`;
 const dir = await mkdtemp(join(tmpdir(), 'agent-chess-gpt-'));
 const output = join(dir, 'response.txt');
 
@@ -28,13 +33,19 @@ try {
   if (code !== 0) throw new Error(`CODEX_AGENT_FAILED: ${stderr.trim()}`);
 
   const result = JSON.parse(await readFile(output, 'utf8'));
-  if (!legalMoves.some((move) => move.uci === result.moveUci)) {
+  if (result.probeSquare) {
+    process.stdout.write(JSON.stringify({
+      probeSquare: result.probeSquare,
+      trace: { phase: 'gpt-5.6', summary: String(result.summary ?? 'Selected a piece to probe.').slice(0, 280) },
+    }));
+  } else if (!legalMoves.some((move) => move.uci === result.moveUci)) {
     throw new Error(`CODEX_RETURNED_ILLEGAL_MOVE: ${result.moveUci}`);
+  } else {
+    process.stdout.write(JSON.stringify({
+      moveUci: result.moveUci,
+      trace: { phase: 'gpt-5.6', summary: String(result.summary ?? 'Selected a cached legal move.').slice(0, 280) },
+    }));
   }
-  process.stdout.write(JSON.stringify({
-    moveUci: result.moveUci,
-    trace: { phase: 'gpt-5.6', summary: String(result.summary ?? 'Selected a legal move.').slice(0, 280) },
-  }));
 } finally {
   await rm(dir, { recursive: true, force: true });
 }

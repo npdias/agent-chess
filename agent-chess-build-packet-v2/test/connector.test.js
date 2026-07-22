@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAgentOutput, chooseDemoMove } from '../src/connector.js';
+import {
+  cacheProbe,
+  chooseDemoMove,
+  parseAgentAction,
+  parseAgentOutput,
+  runCommandAgent,
+  validateLocalCandidate,
+} from '../src/connector.js';
 
 const turn = {
   legalMoves: [
@@ -28,12 +35,38 @@ test('demo connector chooses a legal central move when available', () => {
   assert.equal(chooseDemoMove(turn), 'e2e4');
 });
 
-import { runCommandAgent } from '../src/connector.js';
+test('parses a progressive piece probe action', () => {
+  assert.deepEqual(parseAgentAction('{"probeSquare":"e2"}'), { probeSquare: 'e2', trace: null });
+});
+
+test('rejects a malformed or uncached candidate before WebSocket submission', () => {
+  assert.throws(() => validateLocalCandidate(turn, 'e2e5'), /MOVE_NOT_LEGAL/);
+  assert.throws(() => validateLocalCandidate(turn, 'e2-e4'), /MOVE_NOT_LEGAL/);
+});
+
+test('caches a piece probe under its current turn before accepting its move', () => {
+  const compactTurn = { turnId: 'turn-1', fen: 'start', probeResults: {} };
+  const cached = cacheProbe(compactTurn, {
+    turnId: 'turn-1', square: 'e2', moves: [{ uci: 'e2e4', san: 'e4' }],
+  });
+
+  assert.equal(validateLocalCandidate(cached, 'e2e4').moveUci, 'e2e4');
+  assert.deepEqual(cached.probeResults.e2.moves, [{ uci: 'e2e4', san: 'e4' }]);
+});
 
 test('runs a command harness with the turn on stdin', async () => {
   const result = await runCommandAgent('node test/fixtures/legal-agent.js', turn, { timeoutMs: 2000 });
   assert.equal(result.moveUci, 'a2a3');
   assert.match(result.trace.summary, /Selected a3/);
+});
+
+test('delivers a compact snapshot plus cached probe results to command adapter', async () => {
+  const result = await runCommandAgent('node test/fixtures/legal-agent.js', {
+    turnId: 'turn-compact',
+    fen: 'start',
+    probeResults: { e2: { moves: [{ uci: 'e2e4', san: 'e4' }] } },
+  }, { timeoutMs: 2000 });
+  assert.equal(result.moveUci, 'e2e4');
 });
 
 test('local timeout override takes precedence over a server deadline hint', async () => {

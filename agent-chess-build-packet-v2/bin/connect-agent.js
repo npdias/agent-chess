@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import WebSocket from 'ws';
-import { chooseDemoMove, runCommandAgent } from '../src/connector.js';
+import { cacheProbe, chooseDemoAction, runCommandAction, validateLocalCandidate } from '../src/connector.js';
 
 function parseArgs(argv) {
   const args = {};
@@ -33,6 +33,36 @@ if (!args.server || !args.seat || (!args.command && !args.demo)) {
 
 const socket = new WebSocket(toWsUrl(args.server, args.seat));
 let busy = false;
+let activeTurn = null;
+let commandRounds = 0;
+
+function publish(turnId, phase, summary) {
+  socket.send(JSON.stringify({ type: 'trace.publish', turnId, phase, summary }));
+}
+
+async function advanceAgent() {
+  if (!activeTurn || busy) return;
+  if (commandRounds >= 4) throw new Error('AGENT_COMMAND_ROUND_LIMIT');
+  busy = true;
+  try {
+    publish(activeTurn.turnId, 'evaluate', 'Evaluating local agent action.');
+    const action = args.command
+      ? await runCommandAction(args.command, activeTurn)
+      : chooseDemoAction(activeTurn);
+    commandRounds += 1;
+    if (action.trace) publish(activeTurn.turnId, action.trace.phase, action.trace.summary);
+    if (action.probeSquare) {
+      if (activeTurn.probeResults?.[action.probeSquare]) throw new Error('REPEATED_PROBE');
+      socket.send(JSON.stringify({ type: 'moves.list', turnId: activeTurn.turnId, square: action.probeSquare }));
+      return;
+    }
+    const candidate = validateLocalCandidate(activeTurn, action.moveUci);
+    publish(activeTurn.turnId, 'choose', `Submitting ${candidate.moveUci}.`);
+    socket.send(JSON.stringify({ type: 'move.submit', turnId: activeTurn.turnId, moveUci: candidate.moveUci }));
+  } finally {
+    busy = false;
+  }
+}
 
 socket.on('open', () => console.log('Connected to agent seat.'));
 socket.on('error', (error) => {
@@ -62,6 +92,11 @@ socket.on('message', async (raw) => {
     busy = false;
     return;
   }
+  if (message.type === 'moves.list.result' && activeTurn?.turnId === message.turnId) {
+    activeTurn = cacheProbe(activeTurn, message);
+    advanceAgent().catch((error) => console.error(`Agent failed: ${error.message}`));
+    return;
+  }
   if (message.type === 'game.end') {
     console.log(`Game over: ${message.result}`);
     console.log(message.pgn);
@@ -69,31 +104,7 @@ socket.on('message', async (raw) => {
     return;
   }
   if (message.type !== 'turn.start' || busy) return;
-
-  busy = true;
-  try {
-    const result = args.command
-      ? await runCommandAgent(args.command, message)
-      : {
-          moveUci: chooseDemoMove(message),
-          trace: { phase: 'demo', summary: 'Demo connector selected a preferred legal move.' },
-        };
-
-    if (result.trace) {
-      socket.send(JSON.stringify({
-        type: 'trace.publish',
-        phase: result.trace.phase,
-        summary: result.trace.summary,
-      }));
-    }
-    socket.send(JSON.stringify({
-      type: 'move.submit',
-      turnId: message.turnId,
-      moveUci: result.moveUci,
-    }));
-  } catch (error) {
-    console.error(`Agent failed: ${error.message}`);
-  } finally {
-    busy = false;
-  }
+  activeTurn = { ...message, probeResults: {} };
+  commandRounds = 0;
+  advanceAgent().catch((error) => console.error(`Agent failed: ${error.message}`));
 });

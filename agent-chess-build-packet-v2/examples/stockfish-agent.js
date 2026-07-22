@@ -12,16 +12,21 @@ console.log = () => {};
 const engine = await StockfishEngine.start({ skillLevel: 20, movetimeMs: 1200 });
 try {
   const moveUci = await engine.bestMove(turn.fen);
-  if (!turn.legalMoves.some((move) => move.uci === moveUci)) {
-    throw new Error(`ENGINE_RETURNED_ILLEGAL_MOVE: ${moveUci}`);
+  const cachedMoves = Object.values(turn.probeResults ?? {}).flatMap((result) => result.moves ?? []);
+  if (!cachedMoves.some((move) => move.uci === moveUci)) {
+    write(JSON.stringify({
+      probeSquare: moveUci.slice(0, 2),
+      trace: { phase: 'engine', summary: 'Local Stockfish selected an origin to probe.' },
+    }));
+  } else {
+    write(JSON.stringify({
+      moveUci,
+      trace: {
+        phase: 'engine',
+        summary: 'Local Stockfish selected a cached legal move after 1200 ms analysis.',
+      },
+    }));
   }
-  write(JSON.stringify({
-    moveUci,
-    trace: {
-      phase: 'engine',
-      summary: 'Local Stockfish selected a legal move after 1200 ms analysis.',
-    },
-  }));
 } finally {
   engine.close();
   process.stdout.write = write;
