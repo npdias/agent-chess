@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cacheProbe,
+  cacheAllMoves,
   chooseDemoMove,
+  createAgentRequest,
   parseAgentAction,
   parseAgentOutput,
   runCommandAgent,
@@ -39,6 +41,16 @@ test('parses a progressive piece probe action', () => {
   assert.deepEqual(parseAgentAction('{"probeSquare":"e2"}'), { probeSquare: 'e2', trace: null });
 });
 
+test('parses an explicit full move-list request', () => {
+  assert.deepEqual(parseAgentAction('{"requestAllMoves":true}'), { requestAllMoves: true, trace: null });
+});
+
+test('maps explicit full-list action to a turn-scoped outbound request', () => {
+  assert.deepEqual(createAgentRequest({ turnId: 'turn-all' }, { requestAllMoves: true }), {
+    type: 'moves.list_all', turnId: 'turn-all',
+  });
+});
+
 test('rejects a malformed or uncached candidate before WebSocket submission', () => {
   assert.throws(() => validateLocalCandidate(turn, 'e2e5'), /MOVE_NOT_LEGAL/);
   assert.throws(() => validateLocalCandidate(turn, 'e2-e4'), /MOVE_NOT_LEGAL/);
@@ -54,6 +66,16 @@ test('caches a piece probe under its current turn before accepting its move', ()
   assert.deepEqual(cached.probeResults.e2.moves, [{ uci: 'e2e4', san: 'e4' }]);
 });
 
+test('caches explicit full-list results before accepting a full-list candidate', () => {
+  const compactTurn = { turnId: 'turn-all', fen: 'start', probeResults: {} };
+  const cached = cacheAllMoves(compactTurn, {
+    turnId: 'turn-all', moves: [{ uci: 'g1f3', san: 'Nf3' }],
+  });
+
+  assert.equal(cached.requestAllMoves, true);
+  assert.equal(validateLocalCandidate(cached, 'g1f3').moveUci, 'g1f3');
+});
+
 test('runs a command harness with the turn on stdin', async () => {
   const result = await runCommandAgent('node test/fixtures/legal-agent.js', turn, { timeoutMs: 2000 });
   assert.equal(result.moveUci, 'a2a3');
@@ -67,6 +89,14 @@ test('delivers a compact snapshot plus cached probe results to command adapter',
     probeResults: { e2: { moves: [{ uci: 'e2e4', san: 'e4' }] } },
   }, { timeoutMs: 2000 });
   assert.equal(result.moveUci, 'e2e4');
+});
+
+test('delivers cached full-list results to command adapter before a move is selected', async () => {
+  const result = await runCommandAgent('node test/fixtures/legal-agent.js', {
+    turnId: 'turn-all', fen: 'start', requestAllMoves: true,
+    allMoves: [{ uci: 'g1f3', san: 'Nf3' }],
+  }, { timeoutMs: 2000 });
+  assert.equal(result.moveUci, 'g1f3');
 });
 
 test('local timeout override takes precedence over a server deadline hint', async () => {

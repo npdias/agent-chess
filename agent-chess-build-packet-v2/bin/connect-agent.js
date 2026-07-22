@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import WebSocket from 'ws';
-import { cacheProbe, chooseDemoAction, runCommandAction, validateLocalCandidate } from '../src/connector.js';
+import { cacheAllMoves, cacheProbe, chooseDemoAction, createAgentRequest, runCommandAction, validateLocalCandidate } from '../src/connector.js';
 
 function parseArgs(argv) {
   const args = {};
@@ -53,12 +53,17 @@ async function advanceAgent() {
     if (action.trace) publish(activeTurn.turnId, action.trace.phase, action.trace.summary);
     if (action.probeSquare) {
       if (activeTurn.probeResults?.[action.probeSquare]) throw new Error('REPEATED_PROBE');
-      socket.send(JSON.stringify({ type: 'moves.list', turnId: activeTurn.turnId, square: action.probeSquare }));
+      socket.send(JSON.stringify(createAgentRequest(activeTurn, action)));
+      return;
+    }
+    if (action.requestAllMoves) {
+      if (activeTurn.allMoves) throw new Error('REPEATED_FULL_MOVE_LIST');
+      socket.send(JSON.stringify(createAgentRequest(activeTurn, action)));
       return;
     }
     const candidate = validateLocalCandidate(activeTurn, action.moveUci);
     publish(activeTurn.turnId, 'choose', `Submitting ${candidate.moveUci}.`);
-    socket.send(JSON.stringify({ type: 'move.submit', turnId: activeTurn.turnId, moveUci: candidate.moveUci }));
+    socket.send(JSON.stringify(createAgentRequest(activeTurn, candidate)));
   } finally {
     busy = false;
   }
@@ -94,6 +99,11 @@ socket.on('message', async (raw) => {
   }
   if (message.type === 'moves.list.result' && activeTurn?.turnId === message.turnId) {
     activeTurn = cacheProbe(activeTurn, message);
+    advanceAgent().catch((error) => console.error(`Agent failed: ${error.message}`));
+    return;
+  }
+  if (message.type === 'moves.list_all.result' && activeTurn?.turnId === message.turnId) {
+    activeTurn = cacheAllMoves(activeTurn, message);
     advanceAgent().catch((error) => console.error(`Agent failed: ${error.message}`));
     return;
   }

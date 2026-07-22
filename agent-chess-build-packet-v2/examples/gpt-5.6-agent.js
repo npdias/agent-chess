@@ -14,7 +14,7 @@ const legalMoves = requestAllMoves ? (turn.allMoves ?? []) : probeResults;
 const movablePieces = turn.positionStatus?.movablePieces ?? [];
 const prompt = legalMoves.length
   ? `You are a chess-playing agent. Select one move from cached legalMoves for this position.\n\nPosition FEN: ${turn.fen}\nRecent moves: ${(turn.recentMoves ?? []).map((move) => move.uci).join(' ') || '(start)'}\nYour color: ${turn.agentColor}\nCached legal moves: ${JSON.stringify(legalMoves)}\n\nReturn exactly JSON: {"moveUci":"cached UCI move","summary":"one short public chess reason"}.`
-  : `You are a chess-playing agent. Choose one movable origin square to probe.\n\nPosition FEN: ${turn.fen}\nMovable pieces: ${JSON.stringify(movablePieces)}\n\nReturn exactly JSON: {"probeSquare":"origin square","summary":"one short public chess reason"}.`;
+  : `You are a chess-playing agent. Choose one movable origin square to probe. Request a complete list only when cross-piece ranking is necessary.\n\nPosition FEN: ${turn.fen}\nMovable pieces: ${JSON.stringify(movablePieces)}\n\nReturn exactly one JSON action: {"probeSquare":"origin square","summary":"one short public chess reason"} or {"requestAllMoves":true,"summary":"one short public chess reason"}.`;
 const dir = await mkdtemp(join(tmpdir(), 'agent-chess-gpt-'));
 const output = join(dir, 'response.txt');
 
@@ -33,7 +33,12 @@ try {
   if (code !== 0) throw new Error(`CODEX_AGENT_FAILED: ${stderr.trim()}`);
 
   const result = JSON.parse(await readFile(output, 'utf8'));
-  if (result.probeSquare) {
+  if (result.requestAllMoves === true) {
+    process.stdout.write(JSON.stringify({
+      requestAllMoves: true,
+      trace: { phase: 'gpt-5.6', summary: String(result.summary ?? 'Requested explicit full move list.').slice(0, 280) },
+    }));
+  } else if (result.probeSquare) {
     process.stdout.write(JSON.stringify({
       probeSquare: result.probeSquare,
       trace: { phase: 'gpt-5.6', summary: String(result.summary ?? 'Selected a piece to probe.').slice(0, 280) },

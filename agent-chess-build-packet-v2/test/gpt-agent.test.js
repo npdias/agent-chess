@@ -11,5 +11,6 @@ test('GPT chess agent consumes cached probes and keeps full move expansion opt-i
   const source = await readFile(new URL('../examples/gpt-5.6-agent.js', import.meta.url), 'utf8');
   assert.match(source, /probeResults/);
   assert.match(source, /requestAllMoves/);
+  assert.match(source, /"requestAllMoves":true/);
   assert.doesNotMatch(source, /turn\.legalMoves/);
 });

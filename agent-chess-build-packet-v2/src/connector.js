@@ -42,6 +42,9 @@ export function parseAgentAction(stdout) {
   if (!parsed || typeof parsed !== 'object') throw new Error('INVALID_AGENT_ACTION');
 
   const trace = parseTrace(parsed);
+  if (parsed.requestAllMoves === true && !('probeSquare' in parsed || 'moveUci' in parsed || 'move' in parsed || 'uci' in parsed)) {
+    return { requestAllMoves: true, trace };
+  }
   if (typeof parsed.probeSquare === 'string' && !('moveUci' in parsed || 'move' in parsed || 'uci' in parsed)) {
     if (!SQUARE_PATTERN.test(parsed.probeSquare)) throw new Error('INVALID_PROBE_SQUARE');
     return { probeSquare: parsed.probeSquare, trace };
@@ -66,10 +69,25 @@ export function cacheProbe(turn, result) {
   };
 }
 
+export function cacheAllMoves(turn, result) {
+  if (!turn?.turnId || result?.turnId !== turn.turnId) throw new Error('STALE_TURN');
+  if (!Array.isArray(result.moves)) throw new Error('INVALID_PROBE_RESULT');
+  return { ...turn, requestAllMoves: true, allMoves: result.moves };
+}
+
+export function createAgentRequest(turn, action) {
+  if (!turn?.turnId) throw new Error('STALE_TURN');
+  if (action?.probeSquare) return { type: 'moves.list', turnId: turn.turnId, square: action.probeSquare };
+  if (action?.requestAllMoves) return { type: 'moves.list_all', turnId: turn.turnId };
+  if (action?.moveUci) return { type: 'move.submit', turnId: turn.turnId, moveUci: action.moveUci };
+  throw new Error('INVALID_AGENT_ACTION');
+}
+
 export function validateLocalCandidate(turn, moveUci) {
   if (typeof moveUci !== 'string' || !UCI_PATTERN.test(moveUci)) throw new Error('MOVE_NOT_LEGAL');
   const moves = [
     ...(turn?.legalMoves ?? []),
+    ...(turn?.allMoves ?? []),
     ...Object.values(turn?.probeResults ?? {}).flatMap((result) => result.moves ?? []),
   ];
   if (!moves.some((move) => move.uci === moveUci)) throw new Error('MOVE_NOT_LEGAL');
