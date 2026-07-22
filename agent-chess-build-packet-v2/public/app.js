@@ -442,6 +442,10 @@ function selectTab(name) {
   document.querySelectorAll('.tab-content').forEach((panel) => panel.classList.toggle('active', panel.id === `tab-${name}`));
 }
 
+export function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
 function boot() {
   qs('create-match').addEventListener('submit', createMatch);
   qs('steering-form').addEventListener('submit', sendSteering);
@@ -455,7 +459,7 @@ function boot() {
     const response = await fetch('/api/agent-sessions', { method: 'POST', headers: { authorization: `Bearer ${agentCapability}` } });
     if (!response.ok) return toast('Connector unavailable');
     const session = await response.json();
-    qs('connect-command').textContent = `npm run connect -- --server ${location.origin} --path ${session.wsPath} --command ./your-agent`;
+    qs('connect-command').textContent = `npm run connect -- --server ${location.origin} --path ${shellQuote(session.wsPath)} --command ./your-agent`;
     copyText(qs('connect-command').textContent, 'Connector command copied');
   });
   qs('copy-pgn').addEventListener('click', () => currentMatch?.pgn && copyText(currentMatch.pgn, 'PGN copied'));

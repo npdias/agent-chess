@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fenToBoard, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
+import { spawnSync } from 'node:child_process';
+import { fenToBoard, shellQuote, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
 
 test('maps FEN piece placement into 64 board squares', () => {
   const board = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
@@ -17,6 +18,13 @@ test('converts board indexes to algebraic square names', () => {
   assert.equal(squareName(7), 'h8');
   assert.equal(squareName(56), 'a1');
   assert.equal(squareName(63), 'h1');
+});
+
+test('quotes copied ticket paths for zsh argv parsing', () => {
+  const path = '/agent?ticket=short-lived';
+  const result = spawnSync('/bin/zsh', ['-f', '-c', `set -- --path ${shellQuote(path)}; print -r -- "$2"`], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), path);
 });
 
 

@@ -18,8 +18,10 @@ class FakeStockfish {
 function collectMessages(socket) {
   const queue = [];
   const waiters = [];
+  const seen = [];
   socket.on('message', (raw) => {
     const message = JSON.parse(raw.toString());
+    seen.push(message);
     const index = waiters.findIndex((waiter) => waiter.predicate(message));
     if (index >= 0) {
       const [waiter] = waiters.splice(index, 1);
@@ -31,6 +33,7 @@ function collectMessages(socket) {
   });
 
   return {
+    count(predicate) { return seen.filter(predicate).length; },
     next(predicate = () => true, timeoutMs = 3000) {
       const index = queue.findIndex(predicate);
       if (index >= 0) return Promise.resolve(queue.splice(index, 1)[0]);
@@ -358,6 +361,8 @@ test('sends protocol game.end once for natural completion, resignation, and deci
     assert.equal(finalState.match.activeTurn, null);
     await new Promise((resolve) => setTimeout(resolve, 20));
     assert.equal((await getMatch(address, natural.matchId)).status, 'completed');
+    assert.equal(agent.messages.count((message) => message.type === 'game.end'), 1);
+    assert.equal(observerMessages.count((message) => message.type === 'game.end'), 1);
     agent.socket.close(); observer.close();
 
     const resigned = await createMatch(address, {
@@ -395,6 +400,40 @@ test('sends protocol game.end once for natural completion, resignation, and deci
     const deadlineEnd = await deadlineAgent.messages.next((message) => message.type === 'game.end');
     assert.equal(deadlineEnd.result, '*');
     deadlineAgent.socket.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('terminal agent reconnect receives one game.end without re-emitting match terminal events', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const connect = async () => {
+      const ticket = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+        method: 'POST', headers: { authorization: `Bearer ${created.capabilities.black}` },
+      }).then((response) => response.json());
+      const socket = new WebSocket(`${address.wsUrl}${ticket.wsPath}`);
+      const messages = collectMessages(socket);
+      await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+      await messages.next((message) => message.type === 'match.start');
+      return { socket, messages };
+    };
+    const first = await connect();
+    await fetch(`${address.httpUrl}/api/matches/${created.matchId}/resign`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    });
+    await first.messages.next((message) => message.type === 'game.end');
+    first.socket.close();
+    const second = await connect();
+    await second.messages.next((message) => message.type === 'game.end');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(second.messages.count((message) => message.type === 'game.end'), 1);
+    second.socket.close();
   } finally {
     await server.stop();
   }

@@ -128,17 +128,23 @@ export function createAgentChessServer({
     record.decisionTimer = null;
   }
 
-  function emitTerminal(record) {
-    if (record.terminalEmitted) return;
-    record.terminalEmitted = true;
-    clearDecisionDeadline(record);
-    record.deadlineTurnId = null;
+  function terminalMessage(record) {
     const ended = {
       type: MESSAGE_TYPES.GAME_END,
       matchId: record.session.id,
       result: record.session.snapshot().game.result,
       pgn: record.session.game.pgn(),
     };
+    return ended;
+  }
+
+  function emitTerminal(record, socket = null) {
+    if (socket) safeSend(socket, terminalMessage(record));
+    if (record.terminalEmitted) return;
+    record.terminalEmitted = true;
+    clearDecisionDeadline(record);
+    record.deadlineTurnId = null;
+    const ended = terminalMessage(record);
     for (const socket of record.agentSockets.values()) safeSend(socket, ended);
     broadcast(record, ended);
     broadcastState(record);
@@ -319,6 +325,7 @@ export function createAgentChessServer({
         agentColor: color,
       });
       broadcastState(record);
+      if (record.session.isTerminal()) return record.terminalEmitted ? emitTerminal(record, socket) : emitTerminal(record);
       advance(record).catch(() => undefined);
     }, 0);
   });
