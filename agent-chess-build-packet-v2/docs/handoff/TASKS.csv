@@ -1,0 +1,10 @@
+task_id,title,depends_on,definition_of_done
+AC-201,Protocol 2.0 message contracts,,Protocol validators and stable error codes pass focused tests
+AC-202,Compact turn snapshot,AC-201,FEN color recent moves check state and movable pieces emitted without full move list
+AC-203,Turn-scoped chess probes,AC-202,Piece moves full moves history and candidate validation work without mutation
+AC-204,WebSocket probe transport,AC-203,Remote requests and responses are scoped authenticated and stale-safe
+AC-205,Local runner progressive tools,AC-204,Runner caches snapshot supports probes and validates before submit
+AC-206,Example agent migration,AC-205,Included agent plays from compact snapshots through probes
+AC-207,Minimal observer updates,AC-202,UI shows compact snapshot fields without redesign
+AC-208,Protocol docs and migration,AC-206;AC-207,README and protocol docs match implemented behavior
+AC-209,End-to-end verification,AC-208,Full suite audit and two consecutive real Stockfish smoke matches pass

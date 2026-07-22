@@ -1,0 +1,4 @@
+node_modules/
+.agent-chess/
+coverage/
+*.log

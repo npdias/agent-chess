@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#121713">
+  <title>Agent Chess</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Agent Chess home">
+      <span class="brand-mark">AC</span>
+      <span>Agent Chess</span>
+    </a>
+    <div class="mode-chip"><span class="status-dot"></span><span id="engine">Stockfish benchmark</span></div>
+    <nav class="top-actions" aria-label="Match navigation">
+      <button id="new-match-button" class="ghost-button" type="button">New match</button>
+      <span id="connection" class="connection-badge" data-connected="false">Offline</span>
+    </nav>
+  </header>
+
+  <main class="app-shell">
+    <section id="empty-state" class="setup-shell">
+      <div class="setup-copy">
+        <p class="eyebrow">Local-agent arena</p>
+        <h1>Put an agent across the board from Stockfish.</h1>
+        <p>Agent inference and credentials remain local. This service owns the board, validates every move, runs Stockfish, and records the match.</p>
+        <div class="feature-strip">
+          <span>Legal move validation</span><span>Private trace summaries</span><span>Optional trainer steering</span>
+        </div>
+      </div>
+      <form id="create-match" class="setup-card">
+        <div class="form-heading"><div><p class="eyebrow">Create seat</p><h2>New match</h2></div><span class="pill">Prototype</span></div>
+        <label>Agent name<input name="agentName" value="My Agent" maxlength="80" autocomplete="off"></label>
+        <div class="field-row">
+          <label>Agent color<select name="agentColor"><option value="white">White</option><option value="black">Black</option></select></label>
+          <label>Steering<select name="steeringMode"><option value="locked">Locked</option><option value="trainer">Trainer enabled</option></select></label>
+        </div>
+        <label class="range-label"><span>Stockfish skill <output id="skill-output">5</output></span><input id="skill-level" name="skillLevel" type="range" min="0" max="20" value="5"></label>
+        <button class="primary-button" type="submit">Create match</button>
+        <p class="form-note">No model key is requested or stored.</p>
+      </form>
+    </section>
+
+    <section id="match-view" class="match-layout" hidden>
+      <section class="board-stage">
+        <div class="match-context">
+          <div><p class="eyebrow" id="match-kind">Stockfish match</p><h1 id="match-title">Live match</h1></div>
+          <div class="context-actions"><span id="mode" class="pill"></span><button id="copy-pgn" class="ghost-button" type="button">Copy PGN</button></div>
+        </div>
+
+        <div class="player-strip opponent">
+          <div class="player-identity"><span class="avatar avatar-engine">SF</span><div><strong id="opponent-name">Stockfish</strong><small id="engine-inline">Local engine opponent</small></div></div>
+          <div class="player-meta"><span class="rating-label">Engine</span><span class="clock" id="engine-state">Ready</span></div>
+        </div>
+
+        <div id="board" class="board" aria-label="Current chess position"></div>
+
+        <div class="player-strip agent">
+          <div class="player-identity"><span class="avatar avatar-agent">AI</span><div><strong id="agent-name">Connected agent</strong><small id="agent-color"></small></div></div>
+          <div class="player-meta"><span class="rating-label" id="connection-small">Waiting</span><span id="turn-label" class="clock"></span></div>
+        </div>
+
+        <div class="board-footer">
+          <div class="position-line"><span>FEN</span><code id="fen"></code></div>
+          <button id="flip-board" class="text-button" type="button">Flip board</button>
+        </div>
+      </section>
+
+      <aside class="control-rail">
+        <section id="connector" class="connector-card" hidden>
+          <div><p class="eyebrow">Agent seat ready</p><strong>Connect your local harness</strong></div>
+          <code id="connect-command"></code>
+          <div class="connector-actions"><button id="copy-command" class="secondary-button" type="button">Copy command</button><small>Token <span id="seat-token"></span></small></div>
+        </section>
+
+        <section class="panel status-panel">
+          <div class="status-primary"><span id="status-kicker">Match status</span><strong id="status-title">Waiting for agent</strong></div>
+          <div class="summary-grid">
+            <div><span>Result</span><strong id="summary-result">In progress</strong></div>
+            <div><span>Moves</span><strong id="summary-moves">0</strong></div>
+            <div><span>Steering</span><strong id="summary-steering">Locked</strong></div>
+            <div><span>Termination</span><strong id="summary-termination">—</strong></div>
+          </div>
+        </section>
+
+        <section class="panel tab-panel">
+          <div class="tabs" role="tablist">
+            <button class="tab active" type="button" data-tab="trace">Agent trace</button>
+            <button class="tab" type="button" data-tab="steering">Steering</button>
+            <button class="tab" type="button" data-tab="moves">Moves</button>
+          </div>
+
+          <div id="tab-trace" class="tab-content active" role="tabpanel">
+            <div class="panel-title"><h2>Agent activity</h2><span class="live-label"><i></i>Live</span></div>
+            <div id="trace" class="trace"></div>
+          </div>
+
+          <div id="tab-steering" class="tab-content" role="tabpanel">
+            <div class="panel-title"><h2>Trainer channel</h2><span id="steering-state" class="pill"></span></div>
+            <form id="steering-form" class="steering-form" hidden>
+              <label for="steering-input">Guidance for the agent’s next turn</label>
+              <textarea id="steering-input" maxlength="500" placeholder="Example: simplify the position and protect the king"></textarea>
+              <div class="steering-actions"><small>Applied at the next turn boundary.</small><button type="submit">Queue guidance</button></div>
+            </form>
+            <div id="steering-locked" class="locked-state"><strong>Steering is locked</strong><p>This match measures autonomous play. Mid-match coaching is disabled.</p></div>
+          </div>
+
+          <div id="tab-moves" class="tab-content" role="tabpanel">
+            <div class="panel-title"><h2>Move history</h2><span>White / Black</span></div>
+            <div id="moves" class="moves"></div>
+          </div>
+        </section>
+
+        <section id="post-match" class="panel post-match" hidden>
+          <div class="panel-title"><h2>Match breakdown</h2><span>First-pass review</span></div>
+          <div class="review-callout"><strong id="review-headline">Game complete</strong><p id="review-copy"></p></div>
+          <div class="review-list" id="review-list"></div>
+          <p class="analysis-note">Engine evaluation, inaccuracies, and Elo impact require the planned PGN analysis worker.</p>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
