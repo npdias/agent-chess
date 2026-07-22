@@ -40,3 +40,70 @@ test('exports a valid PGN after moves', () => {
   assert.match(pgn, /\[Black "Stockfish"\]/);
   assert.match(pgn, /1\. e4 e5/);
 });
+
+test('groups starting moves into ten movable origins', () => {
+  const game = new AgentChessGame();
+
+  assert.deepEqual(game.getMovablePieces().map((piece) => piece.square), [
+    'a2', 'b1', 'b2', 'c2', 'd2', 'e2', 'f2', 'g1', 'g2', 'h2',
+  ]);
+});
+
+test('builds compact turn without full legal list', () => {
+  const game = new AgentChessGame();
+  const turn = game.buildTurnSnapshot({
+    gameId: 'g',
+    turnId: 't',
+    agentColor: 'white',
+    steering: { mode: 'locked', guidance: null },
+    deadline: null,
+  });
+
+  assert.equal(turn.protocolVersion, '2.0');
+  assert.equal('legalMoves' in turn, false);
+  assert.equal('movesUci' in turn, false);
+  assert.equal(turn.positionStatus.inCheck, false);
+});
+
+test('piece probe returns only e2 moves', () => {
+  const game = new AgentChessGame();
+
+  assert.deepEqual(game.getMovesForSquare('e2').map((move) => move.uci).sort(), ['e2e3', 'e2e4']);
+});
+
+test('returns configured trailing history window', () => {
+  const game = new AgentChessGame();
+  for (const move of ['e2e4', 'e7e5', 'g1f3', 'b8c6']) game.applyMove(move);
+
+  assert.deepEqual(game.getRecentMoves(2), [
+    { ply: 3, color: 'white', uci: 'g1f3', san: 'Nf3' },
+    { ply: 4, color: 'black', uci: 'b8c6', san: 'Nc6' },
+  ]);
+});
+
+test('reports check status from authoritative legal position', () => {
+  const game = new AgentChessGame({ fen: '4k3/8/8/8/8/8/4r3/4K3 w - - 0 1' });
+  const turn = game.buildTurnSnapshot({
+    gameId: 'g',
+    turnId: 't',
+    agentColor: 'white',
+    steering: { mode: 'locked', guidance: null },
+    deadline: null,
+  });
+
+  assert.equal(turn.positionStatus.inCheck, true);
+  assert.deepEqual(turn.positionStatus.movablePieces.map((piece) => piece.square), ['e1']);
+});
+
+test('validates candidates without changing game state', () => {
+  const game = new AgentChessGame();
+  const before = game.snapshot().fen;
+
+  assert.deepEqual(game.validateCandidate('e2e4'), {
+    moveUci: 'e2e4', legal: true, san: 'e4', reason: null,
+  });
+  assert.deepEqual(game.validateCandidate('e2e5'), {
+    moveUci: 'e2e5', legal: false, san: null, reason: 'MOVE_NOT_LEGAL',
+  });
+  assert.equal(game.snapshot().fen, before);
+});
