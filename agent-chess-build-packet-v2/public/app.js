@@ -226,6 +226,10 @@ let replayPly = null;
 let pendingMove = false;
 let dragFrom = null;
 let suppressClick = false;
+let previousLiveFen = null;
+let boardAnimationTimer = null;
+let boardAnimationActive = false;
+let queuedBoardMatch = null;
 
 function toast(message) {
   const node = qs('toast');
@@ -240,16 +244,139 @@ async function copyText(text, success = 'Copied') {
   toast(success);
 }
 
+function makePiece(piece, name) {
+  const token = document.createElement('span');
+  token.className = `piece ${piece === piece.toUpperCase() ? 'white-piece' : 'black-piece'}`;
+  token.dataset.piece = piece;
+  token.textContent = PIECES[piece];
+  token.setAttribute('aria-label', `${piece === piece.toUpperCase() ? 'white' : 'black'} piece on ${name}`);
+  return token;
+}
+
+function initializeBoard(board) {
+  if (board.dataset.initialized === 'true') return;
+  const indexes = Array.from({ length: 64 }, (_, index) => index);
+  for (const index of indexes) {
+    const name = squareName(index);
+    const row = Math.floor(index / 8);
+    const col = index % 8;
+    const square = document.createElement('button');
+    square.type = 'button';
+    square.className = `square ${(row + col) % 2 ? 'dark' : 'light'}`;
+    square.dataset.square = name;
+    square.addEventListener('click', () => { const click = consumeSuppressedClick(suppressClick); suppressClick = click.suppressed; if (click.handle) handleSquare(name); });
+    square.addEventListener('pointerdown', () => { dragFrom = name; });
+    square.addEventListener('pointerup', () => { if (dragFrom && dragFrom !== name) { suppressClick = true; selection = selectHumanSquare(selection, dragFrom, currentMatch, humanColor); handleSquare(name); } dragFrom = null; });
+    const rank = document.createElement('small');
+    rank.className = 'rank-label';
+    const file = document.createElement('small');
+    file.className = 'file-label';
+    square.append(rank, file);
+    board.append(square);
+  }
+  board.dataset.initialized = 'true';
+}
+
+function clearBoardAnimation() {
+  clearTimeout(boardAnimationTimer);
+  boardAnimationTimer = null;
+  boardAnimationActive = false;
+  qs('board')?.querySelectorAll('.move-animation, .capture-animation').forEach((piece) => {
+    piece.classList.remove('move-animation', 'capture-animation');
+    piece.style.transform = '';
+  });
+  if (queuedBoardMatch) {
+    const next = queuedBoardMatch;
+    queuedBoardMatch = null;
+    renderBoard(next);
+  }
+}
+
+export function deriveBoardTransitions(previous, current, lastMove) {
+  const from = lastMove.slice(0, 2);
+  const to = lastMove.slice(2, 4);
+  const fromIndex = previous.findIndex((_, index) => squareName(index) === from);
+  const toIndex = current.findIndex((_, index) => squareName(index) === to);
+  const moving = previous[fromIndex];
+  if (!moving || !current[toIndex]) return { transfers: [], captureSquares: [] };
+  const transfers = [{ from, to, piece: current[toIndex] }];
+  if (moving.toLowerCase() === 'k' && Math.abs(from.charCodeAt(0) - to.charCodeAt(0)) === 2) {
+    const rank = from[1];
+    const rookFrom = to[0] === 'g' ? `h${rank}` : `a${rank}`;
+    const rookTo = to[0] === 'g' ? `f${rank}` : `d${rank}`;
+    const rookIndex = previous.findIndex((_, index) => squareName(index) === rookFrom);
+    const rookToIndex = current.findIndex((_, index) => squareName(index) === rookTo);
+    if (previous[rookIndex]?.toLowerCase() === 'r' && current[rookToIndex] === previous[rookIndex]) {
+      transfers.push({ from: rookFrom, to: rookTo, piece: current[rookToIndex] });
+    }
+  }
+  const removedOpponent = previous
+    .map((piece, index) => ({ piece, index }))
+    .filter(({ piece, index }) => piece && piece !== moving && (piece === piece.toUpperCase()) !== (moving === moving.toUpperCase()) && !current[index])
+    .map(({ index }) => squareName(index));
+  const captureSquares = [previous[toIndex] && (previous[toIndex] === previous[toIndex].toUpperCase()) !== (moving === moving.toUpperCase()) ? to : null, ...removedOpponent].filter(Boolean);
+  return { transfers, captureSquares };
+}
+
+function reconcileBoardPieces(board, pieces, animation) {
+  const byName = new Map([...board.children].map((square) => [square.dataset.square, square]));
+  if (animation) {
+    for (const captureSquare of animation.captureSquares) {
+      const capturedSquare = byName.get(captureSquare);
+      const captured = capturedSquare.querySelector('.piece');
+      if (captured) {
+        captured.classList.add('capture-animation');
+        setTimeout(() => captured.remove(), 190);
+      }
+    }
+    for (const transfer of animation.transfers) {
+      const fromSquare = byName.get(transfer.from);
+      const toSquare = byName.get(transfer.to);
+      const moving = fromSquare.querySelector('.piece');
+      if (!moving) continue;
+      moving.dataset.piece = transfer.piece;
+      moving.textContent = PIECES[transfer.piece];
+      moving.setAttribute('aria-label', `${transfer.piece === transfer.piece.toUpperCase() ? 'white' : 'black'} piece on ${transfer.to}`);
+      toSquare.append(moving);
+      const fromRect = fromSquare.getBoundingClientRect();
+      const toRect = toSquare.getBoundingClientRect();
+      moving.style.transform = `translate(${fromRect.left - toRect.left}px, ${fromRect.top - toRect.top}px)`;
+      moving.classList.add('move-animation');
+      requestAnimationFrame(() => requestAnimationFrame(() => { moving.style.transform = ''; }));
+    }
+  }
+  for (const [name, square] of byName) {
+    const piece = pieces.find((_, index) => squareName(index) === name);
+    const tokens = [...square.querySelectorAll('.piece')];
+    const retained = tokens.find((token) => token.dataset.piece === piece);
+    tokens.filter((token) => token !== retained && !token.classList.contains('capture-animation')).forEach((token) => token.remove());
+    if (piece && !retained) square.append(makePiece(piece, name));
+  }
+}
+
 function renderBoard(match) {
+  if (boardAnimationActive) { queuedBoardMatch = match; return; }
   const board = qs('board');
+  initializeBoard(board);
   const displayFen = replayPly === null ? match.game.fen : (match.game.positions?.[replayPly] ?? match.game.fen);
   const pieces = fenToBoard(displayFen);
   const lastMove = match.game.movesUci.at(-1) ?? '';
   const from = lastMove.slice(0, 2);
   const to = lastMove.slice(2, 4);
+  const orientationChanged = board.dataset.orientation && board.dataset.orientation !== String(boardFlipped);
+  board.dataset.orientation = String(boardFlipped);
   const indexes = Array.from({ length: 64 }, (_, index) => index);
   if (boardFlipped) indexes.reverse();
-  board.replaceChildren();
+  indexes.forEach((index) => board.append([...board.children].find((square) => square.dataset.square === squareName(index))));
+
+  const previous = previousLiveFen && fenToBoard(previousLiveFen);
+  const fromIndex = previous?.findIndex((_, index) => squareName(index) === from);
+  const toIndex = pieces.findIndex((_, index) => squareName(index) === to);
+  const shouldAnimate = replayPly === null && !pendingMove && !orientationChanged && previous && fromIndex >= 0 && toIndex >= 0 && previous[fromIndex] && pieces[toIndex] && (pieces[toIndex] === previous[fromIndex] || lastMove.length === 5);
+  const byName = new Map([...board.children].map((square) => [square.dataset.square, square]));
+  const transitions = previous && deriveBoardTransitions(previous, pieces, lastMove);
+  const animation = shouldAnimate ? transitions : null;
+  reconcileBoardPieces(board, pieces, animation);
 
   for (const index of indexes) {
     const piece = pieces[index];
@@ -258,40 +385,22 @@ function renderBoard(match) {
     const col = index % 8;
     const visualRow = boardFlipped ? 7 - row : row;
     const visualCol = boardFlipped ? 7 - col : col;
-    const square = document.createElement('button');
-    square.type = 'button';
+    const square = byName.get(name);
     square.setAttribute('aria-label', `${name}${piece ? ` ${piece}` : ''}`);
-    square.className = `square ${(row + col) % 2 ? 'dark' : 'light'}`;
-    square.dataset.square = name;
-    if (name === from || name === to) square.classList.add('last-move');
-    if (selection.selected === name) square.classList.add('selected');
-    if (selection.legalTargets.includes(name)) square.classList.add(piece ? 'legal-capture' : 'legal-target');
-    if (match.game.inCheck && piece?.toLowerCase() === 'k' && (piece === piece.toUpperCase()) === (match.game.turn === 'white')) square.classList.add('in-check');
-    if (pendingMove) square.classList.add('submission-pending');
+    square.classList.toggle('last-move', name === from || name === to);
+    square.classList.toggle('selected', selection.selected === name);
+    square.classList.toggle('legal-capture', selection.legalTargets.includes(name) && Boolean(piece));
+    square.classList.toggle('legal-target', selection.legalTargets.includes(name) && !piece);
+    square.classList.toggle('in-check', Boolean(match.game.inCheck && piece?.toLowerCase() === 'k' && (piece === piece.toUpperCase()) === (match.game.turn === 'white')));
+    square.classList.toggle('submission-pending', pendingMove);
     square.disabled = !humanCapability || !canHumanMove(match, humanColor) || replayPly !== null || pendingMove;
-    square.addEventListener('click', () => { const click = consumeSuppressedClick(suppressClick); suppressClick = click.suppressed; if (click.handle) handleSquare(name); });
-    square.addEventListener('pointerdown', () => { dragFrom = name; });
-    square.addEventListener('pointerup', () => { if (dragFrom && dragFrom !== name) { suppressClick = true; selection = selectHumanSquare(selection, dragFrom, currentMatch, humanColor); handleSquare(name); } dragFrom = null; });
-    if (piece) {
-      const token = document.createElement('span');
-      token.className = `piece ${piece === piece.toUpperCase() ? 'white-piece' : 'black-piece'}`;
-      token.textContent = PIECES[piece];
-      token.setAttribute('aria-label', `${piece === piece.toUpperCase() ? 'white' : 'black'} piece on ${name}`);
-      square.append(token);
-    }
-    if (visualCol === 0) {
-      const rank = document.createElement('small');
-      rank.className = 'rank-label';
-      rank.textContent = name[1];
-      square.append(rank);
-    }
-    if (visualRow === 7) {
-      const file = document.createElement('small');
-      file.className = 'file-label';
-      file.textContent = name[0];
-      square.append(file);
-    }
-    board.append(square);
+    square.querySelector('.rank-label').textContent = visualCol === 0 ? name[1] : '';
+    square.querySelector('.file-label').textContent = visualRow === 7 ? name[0] : '';
+  }
+  if (replayPly === null) previousLiveFen = match.game.fen;
+  if (animation) {
+    boardAnimationActive = true;
+    boardAnimationTimer = setTimeout(clearBoardAnimation, 220);
   }
 }
 

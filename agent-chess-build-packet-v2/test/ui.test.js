@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildExhibitionPayload, materialPerspective, buildAgentInviteUrl, selectDecisionBrief } from '../public/app.js';
+import { buildExhibitionPayload, materialPerspective, buildAgentInviteUrl, selectDecisionBrief, deriveBoardTransitions } from '../public/app.js';
 import { spawnSync } from 'node:child_process';
 import { fenToBoard, shellQuote, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
 
@@ -347,4 +347,70 @@ test('removes obsolete tab controller after native details migration', async () 
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   assert.doesNotMatch(app, /function selectTab\(/);
   assert.doesNotMatch(app, /querySelectorAll\('\.tab'\)/);
+});
+
+test('keeps board squares stable while reconciling keyed pieces', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(app, /board\.replaceChildren\(\)/);
+  assert.match(app, /function initializeBoard\(board\)/);
+  assert.match(app, /function reconcileBoardPieces\(board, pieces, animation\)/);
+  assert.match(app, /board\.dataset\.orientation/);
+  assert.match(app, /square\.dataset\.square = name/);
+});
+
+test('uses bounded transform motion while preserving board interaction states', async () => {
+  const [app, css] = await Promise.all([
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+
+  assert.match(app, /requestAnimationFrame/);
+  assert.match(app, /setTimeout\(clearBoardAnimation, 220\)/);
+  assert.match(app, /replayPly === null && !pendingMove/);
+  assert.match(app, /square\.classList\.toggle\('selected'/);
+  assert.match(app, /square\.classList\.toggle\('submission-pending'/);
+  assert.match(css, /\.piece\.move-animation\s*\{[^}]*transform/);
+  assert.match(css, /\.piece\.capture-animation\s*\{[^}]*opacity/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.piece\.move-animation,\s*\.piece\.capture-animation\s*\{[^}]*transition:\s*none/);
+});
+
+test('derives en-passant pawn square for its opacity transition', () => {
+  const transitions = deriveBoardTransitions(
+    fenToBoard('8/8/8/3pP3/8/8/8/4K3 w - d6 0 1'),
+    fenToBoard('8/8/3P4/8/8/8/8/4K3 b - - 0 1'),
+    'e5d6',
+  );
+  assert.deepEqual(transitions.captureSquares, ['d5']);
+  assert.deepEqual(transitions.transfers, [{ from: 'e5', to: 'd6', piece: 'P' }]);
+});
+
+test('keeps en-passant capture node until its opacity transition finishes', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+
+  assert.match(app, /function deriveBoardTransitions\(previous, current, lastMove\)/);
+  assert.match(app, /removedOpponent/);
+  assert.match(app, /captureSquare/);
+  assert.match(app, /capturedSquare\.querySelector\('\.piece'\)/);
+});
+
+test('derives king and rook transfers for castling', () => {
+  const transitions = deriveBoardTransitions(
+    fenToBoard('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1'),
+    fenToBoard('r3k2r/8/8/8/8/8/8/R4RK1 b kq - 1 1'),
+    'e1g1',
+  );
+  assert.deepEqual(transitions.transfers, [
+    { from: 'e1', to: 'g1', piece: 'K' },
+    { from: 'h1', to: 'f1', piece: 'R' },
+  ]);
+});
+
+test('transfers both king and rook nodes during castling', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+
+  assert.match(app, /transfers\.push/);
+  assert.match(app, /for \(const transfer of animation\.transfers\)/);
+  assert.match(app, /rookFrom/);
+  assert.match(app, /rookTo/);
 });

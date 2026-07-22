@@ -93,6 +93,8 @@ h1, h2, h3, p { margin-top: 0; }
 .square.legal-capture::before { width: 72%; height: 72%; background: transparent; border: 4px solid #19231799; }
 .square.submission-pending { pointer-events: none; opacity: .65; }
 .piece { position: relative; z-index: 2; font-family: "Arial Unicode MS", "Noto Sans Symbols 2", serif; font-size: clamp(2.1rem, 6vw, 5rem); line-height: 1; filter: drop-shadow(0 2px 1px #0005); }
+.piece.move-animation { transform: translate(0, 0); transition: transform 190ms ease-out; will-change: transform; }
+.piece.capture-animation { opacity: 0; transition: opacity 190ms ease-out; will-change: opacity; }
 .white-piece { color: #f6f3e8; text-shadow: 0 0 1px #111, 0 2px 1px #111; }
 .black-piece { color: #20251f; text-shadow: 0 1px 0 #ffffff42; }
 .rank-label, .file-label { position: absolute; z-index: 4; font-size: .62rem; font-weight: 900; opacity: .8; }
@@ -250,4 +252,5 @@ dialog::backdrop { background: #0009; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+  .piece.move-animation, .piece.capture-animation { transition: none; animation: none; }
 }
