@@ -117,9 +117,9 @@ export class MatchSession {
     return turn;
   }
 
-  recordSystemError(message) {
+  recordSystemError(message, code = null) {
     return this._recordActivity({
-      type: 'error', source: 'system', summary: String(message ?? 'Match paused'),
+      type: 'error', source: 'system', summary: String(message ?? 'Match paused'), code,
     });
   }
 

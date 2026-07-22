@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import WebSocket from 'ws';
-import { cacheAllMoves, cacheProbe, chooseDemoAction, createAgentRequest, runCommandAction, validateLocalCandidate } from '../src/connector.js';
+import { cacheAllMoves, cacheProbe, chooseDemoAction, createAgentRequest, exchangeAgentSession, runCommandAction, validateLocalCandidate } from '../src/connector.js';
 
 function parseArgs(argv) {
   const args = {};
@@ -26,18 +26,6 @@ function toWsUrl(server, wsPath) {
   return url.toString();
 }
 
-async function exchangeAgentSession(server, capability) {
-  const response = await fetch(new URL('/api/agent-sessions', server), {
-    method: 'POST', headers: { authorization: `Bearer ${capability}` },
-  });
-  if (!response.ok) throw new Error(`AGENT_SESSION_FAILED_${response.status}`);
-  const session = await response.json();
-  if (typeof session?.wsPath !== 'string' || !session.wsPath.startsWith('/agent?ticket=')) {
-    throw new Error('INVALID_AGENT_SESSION');
-  }
-  return session.wsPath;
-}
-
 const args = parseArgs(process.argv.slice(2));
 if (!args.server || !args.seat || (!args.command && !args.demo)) {
   console.error('Usage: agent-chess-connect --server http://host:3000 --seat TOKEN (--command "./agent" | --demo)');
@@ -46,7 +34,7 @@ if (!args.server || !args.seat || (!args.command && !args.demo)) {
 
 let wsPath;
 try {
-  wsPath = await exchangeAgentSession(args.server, args.seat);
+  wsPath = await exchangeAgentSession(fetch, args.server, args.seat);
 } catch (error) {
   console.error(`Connection failed: ${error.message}`);
   process.exit(1);

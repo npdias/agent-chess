@@ -78,11 +78,11 @@ test('human White move is authenticated and followed by engine move', async () =
       mode: 'exhibition', visibility: 'public',
       seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'engine', name: 'Engine' } },
     });
-    assert.ok(created.capabilities.human);
+    assert.ok(created.capabilities.white);
     const state = await getMatch(address, created.matchId);
     const response = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/human-moves`, {
       method: 'POST', headers: {
-        authorization: `Bearer ${created.capabilities.human}`,
+        authorization: `Bearer ${created.capabilities.white}`,
         'content-type': 'application/json',
       }, body: JSON.stringify({ turnId: state.activeTurn.turnId, moveUci: 'e2e4' }),
     });
@@ -104,8 +104,8 @@ test('generic creation keeps capabilities out of public snapshots and export', a
     const snapshot = await getMatch(address, created.matchId);
     const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`).then((response) => response.json());
     const publicData = JSON.stringify({ snapshot, exported });
-    assert.equal(publicData.includes(created.capabilities.human), false);
-    assert.equal(publicData.includes(created.capabilities.agent), false);
+    assert.equal(publicData.includes(created.capabilities.white), false);
+    assert.equal(publicData.includes(created.capabilities.black), false);
     assert.equal(publicData.includes('seatToken'), false);
   } finally {
     await server.stop();
@@ -121,7 +121,7 @@ test('agent capability exchanges once for a sixty-second ticket', async () => {
       seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
     });
     const exchange = async () => fetch(`${address.httpUrl}/api/agent-sessions`, {
-      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.agent}` },
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
     });
     const ticketResponse = await exchange();
     assert.equal(ticketResponse.status, 201);
@@ -137,6 +137,126 @@ test('agent capability exchanges once for a sixty-second ticket', async () => {
       reused.once('error', resolve);
     });
     first.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('generic capabilities remain independent by seat color', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'private_eval', visibility: 'private',
+      seats: { white: { kind: 'agent', name: 'A' }, black: { kind: 'agent', name: 'B' } },
+    });
+    assert.match(created.capabilities.white, /.+/);
+    assert.match(created.capabilities.black, /.+/);
+    assert.notEqual(created.capabilities.white, created.capabilities.black);
+    const humans = await createMatch(address, {
+      mode: 'private_eval', visibility: 'private',
+      seats: { white: { kind: 'human', name: 'W' }, black: { kind: 'human', name: 'B' } },
+    });
+    assert.match(humans.capabilities.white, /.+/);
+    assert.match(humans.capabilities.black, /.+/);
+    assert.notEqual(humans.capabilities.white, humans.capabilities.black);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('agent reconnect preserves original active-turn deadline', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'private_eval', visibility: 'private', decisionDeadlineMs: 5000,
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const exchange = () => fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    }).then((response) => response.json());
+    const firstTicket = await exchange();
+    const first = new WebSocket(`${address.wsUrl}${firstTicket.wsPath}`);
+    const firstMessages = collectMessages(first);
+    await new Promise((resolve, reject) => { first.once('open', resolve); first.once('error', reject); });
+    const firstTurn = await firstMessages.next((message) => message.type === 'turn.start');
+    first.close();
+    const secondTicket = await exchange();
+    const second = new WebSocket(`${address.wsUrl}${secondTicket.wsPath}`);
+    const secondMessages = collectMessages(second);
+    await new Promise((resolve, reject) => { second.once('open', resolve); second.once('error', reject); });
+    const replay = await secondMessages.next((message) => message.type === 'turn.start');
+    assert.equal(replay.turnId, firstTurn.turnId);
+    assert.equal(replay.deadline, firstTurn.deadline);
+    second.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('steering requires a bound seat capability', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'private_eval', visibility: 'private', steeringMode: 'trainer',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const path = `${address.httpUrl}/api/matches/${created.matchId}/steering`;
+    assert.equal((await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ guidance: 'x' }) })).status, 401);
+    assert.equal((await fetch(path, { method: 'POST', headers: { authorization: 'Bearer wrong', 'content-type': 'application/json' }, body: JSON.stringify({ guidance: 'x' }) })).status, 401);
+    assert.equal((await fetch(path, { method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}`, 'content-type': 'application/json' }, body: JSON.stringify({ guidance: 'x' }) })).status, 202);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('engine failures never expose raw diagnostics', async () => {
+  const secret = 'engine-secret-diagnostic';
+  const server = createAgentChessServer({ stockfishFactory: async () => ({ async bestMove() { throw new Error(secret); }, close() {} }) });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'engine', name: 'Engine' }, black: { kind: 'human', name: 'Human' } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const snapshot = await getMatch(address, created.matchId);
+    const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`).then((response) => response.json());
+    assert.equal(JSON.stringify({ snapshot, exported }).includes(secret), false);
+    assert.ok(snapshot.activity.some((entry) => entry.code === 'ENGINE_FAILURE' && entry.summary === 'Engine unavailable'));
+  } finally {
+    await server.stop();
+  }
+});
+
+test('private_eval suppresses agent decision traces from state and export', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'private_eval', visibility: 'private',
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const ticket = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    }).then((response) => response.json());
+    const socket = new WebSocket(`${address.wsUrl}${ticket.wsPath}`);
+    const messages = collectMessages(socket);
+    await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+    const turn = await messages.next((message) => message.type === 'turn.start');
+    socket.send(JSON.stringify({ type: 'move.submit', turnId: turn.turnId, moveUci: 'e2e4', publicTrace: {
+      summary: 'private reasoning', candidates: [{ uci: 'e2e4', note: 'secret' }], selectedMove: 'e2e4',
+    } }));
+    await messages.next((message) => message.type === 'move.accepted');
+    const snapshot = await getMatch(address, created.matchId);
+    const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`, {
+      headers: { authorization: `Bearer ${created.capabilities.white}` },
+    }).then((response) => response.json());
+    assert.equal(JSON.stringify({ snapshot, exported }).includes('private reasoning'), false);
+    assert.equal(snapshot.activity.some((entry) => entry.type === 'agent.decision'), false);
+    socket.close();
   } finally {
     await server.stop();
   }
@@ -249,7 +369,7 @@ test('pauses after an engine failure and stores a visible recoverable error', as
     await new Promise((resolve) => setTimeout(resolve, 25));
     const state = await fetch(`${address.httpUrl}/api/matches/${created.matchId}`).then((response) => response.json());
     assert.equal(calls, 1);
-    assert.ok(state.activity.some((entry) => entry.type === 'error' && entry.summary === 'engine unavailable'));
+    assert.ok(state.activity.some((entry) => entry.type === 'error' && entry.summary === 'Engine unavailable'));
     agent.close();
   } finally {
     await server.stop();

@@ -99,9 +99,9 @@ export function createAgentChessServer({
     return typeof value === 'string' && /^Bearer .+$/i.test(value) ? value.slice(7) : null;
   }
 
-  function seatForToken(request, record, kind) {
+  function seatForToken(request, record, kind = null) {
     const seat = seatByToken.get(bearer(request));
-    return seat?.record === record && seat.kind === kind ? seat : null;
+    return seat?.record === record && (!kind || seat.kind === kind) ? seat : null;
   }
 
   function closeEngine(record) {
@@ -116,14 +116,17 @@ export function createAgentChessServer({
   }
 
   function armDecisionDeadline(record, turn) {
-    clearDecisionDeadline(record);
     if (!record.decisionDeadlineMs) return;
+    if (record.deadlineTurnId === turn.turnId) return;
+    clearDecisionDeadline(record);
     const expiresAt = Date.now() + record.decisionDeadlineMs;
+    record.deadlineTurnId = turn.turnId;
     turn.deadline = new Date(expiresAt).toISOString();
     turn.deadlineMs = record.decisionDeadlineMs;
     record.decisionTimer = setTimeout(() => {
       if (record.session.activeTurn()?.turnId !== turn.turnId || record.session.isTerminal()) return;
       record.session.fail('AGENT_FAILURE', 'Decision deadline exceeded');
+      record.deadlineTurnId = null;
       broadcastState(record);
       closeEngine(record);
     }, record.decisionDeadlineMs);
@@ -183,8 +186,10 @@ export function createAgentChessServer({
       broadcastState(record);
     } catch (error) {
       record.engineFailed = true;
-      record.session.recordSystemError(error.message);
-      const event = { type: MESSAGE_TYPES.ERROR, code: 'ENGINE_FAILURE', message: error.message, recoverable: true };
+      record.session.recordSystemError('Engine unavailable', 'ENGINE_FAILURE');
+      record.session.fail('ENGINE_FAILURE');
+      closeEngine(record);
+      const event = { type: MESSAGE_TYPES.ERROR, code: 'ENGINE_FAILURE', message: 'Engine unavailable', recoverable: true };
       for (const socket of record.agentSockets.values()) safeSend(socket, event);
       broadcast(record, event);
       broadcastState(record);
@@ -209,6 +214,12 @@ export function createAgentChessServer({
         message = parseClientMessage(raw);
         const active = record.session.activeSeat();
         if (active.kind !== 'agent' || active.color !== color) throw new Error('SEAT_NOT_ACTIVE');
+        if (record.session.mode === 'private_eval' && message.type === MESSAGE_TYPES.TRACE_PUBLISH) {
+          throw new Error('TRACE_NOT_ALLOWED');
+        }
+        if (record.session.mode === 'private_eval' && message.type === MESSAGE_TYPES.MOVE_SUBMIT) {
+          delete message.publicTrace;
+        }
         switch (message.type) {
           case MESSAGE_TYPES.MOVES_LIST: {
             const result = record.session.listMovesForPiece(message);
@@ -251,6 +262,7 @@ export function createAgentChessServer({
           case MESSAGE_TYPES.MOVE_SUBMIT: {
             const applied = record.session.submitAgentMove(message);
             clearDecisionDeadline(record);
+            record.deadlineTurnId = null;
             const accepted = {
               type: MESSAGE_TYPES.MOVE_ACCEPTED,
               matchId: record.session.id,
@@ -323,6 +335,7 @@ export function createAgentChessServer({
         decisionDeadlineMs: Number.isInteger(body.decisionDeadlineMs) && body.decisionDeadlineMs > 0
           ? Math.min(body.decisionDeadlineMs, 300_000) : null,
         decisionTimer: null,
+        deadlineTurnId: null,
       };
       matches.set(session.id, record);
       const capabilities = {};
@@ -330,7 +343,7 @@ export function createAgentChessServer({
         if (!['human', 'agent'].includes(seat.kind)) continue;
         const capability = randomBytes(24).toString('base64url');
         seatByToken.set(capability, { record, color, kind: seat.kind });
-        capabilities[seat.kind] = capability;
+        capabilities[color] = capability;
       }
       const created = {
         matchId: session.id,
@@ -338,7 +351,8 @@ export function createAgentChessServer({
         uiPath: `/?match=${encodeURIComponent(session.id)}`,
       };
       if (legacy) {
-        const seatToken = capabilities.agent;
+        const agentColor = Object.entries(session.seats).find(([, seat]) => seat.kind === 'agent')?.[0];
+        const seatToken = capabilities[agentColor];
         created.seatToken = seatToken;
         created.agentWsPath = `/agent?token=${encodeURIComponent(seatToken)}`;
       }
@@ -348,6 +362,9 @@ export function createAgentChessServer({
     }
 
     if (request.method === 'POST' && url.pathname === '/api/agent-sessions') {
+      for (const [ticket, binding] of seatByTicket) {
+        if (binding.expiresAt < Date.now()) seatByTicket.delete(ticket);
+      }
       const binding = seatByToken.get(bearer(request));
       if (!binding || binding.kind !== 'agent') return sendJson(response, 401, { error: 'UNAUTHORIZED' }), true;
       const ticket = randomBytes(24).toString('base64url');
@@ -393,6 +410,7 @@ export function createAgentChessServer({
           const body = await readJson(request);
           const applied = record.session.submitSeatMove({ color: seat.color, turnId: body.turnId, moveUci: body.moveUci });
           clearDecisionDeadline(record);
+          record.deadlineTurnId = null;
           broadcastState(record);
           sendJson(response, 202, { accepted: true, moveUci: applied.uci, moveSan: applied.san });
           await advance(record);
@@ -400,6 +418,7 @@ export function createAgentChessServer({
           const action = matchActionRoute[2];
           const result = action === 'resign' ? record.session.resign(seat.color) : record.session.abort(seat.color);
           clearDecisionDeadline(record);
+          record.deadlineTurnId = null;
           broadcastState(record);
           closeEngine(record);
           sendJson(response, 202, { accepted: true, ...result });
@@ -415,6 +434,7 @@ export function createAgentChessServer({
     if (request.method === 'POST' && steeringRoute) {
       const record = matches.get(decodeURIComponent(steeringRoute[1]));
       if (!record) return sendJson(response, 404, { error: 'MATCH_NOT_FOUND' }), true;
+      if (!seatForToken(request, record)) return sendJson(response, 401, { error: 'UNAUTHORIZED' }), true;
       const body = await readJson(request);
       try {
         record.session.queueSteering(body.guidance);
@@ -462,6 +482,9 @@ export function createAgentChessServer({
       httpServer.on('upgrade', (request, socket, head) => {
         const url = new URL(request.url, `http://${request.headers.host ?? 'localhost'}`);
         if (url.pathname === '/agent') {
+          for (const [ticket, binding] of seatByTicket) {
+            if (binding.expiresAt < Date.now()) seatByTicket.delete(ticket);
+          }
           let binding;
           const ticket = url.searchParams.get('ticket');
           if (ticket) {
@@ -506,11 +529,12 @@ export function createAgentChessServer({
       const engines = new Set();
       for (const record of matches.values()) {
         clearDecisionDeadline(record);
+        record.deadlineTurnId = null;
         for (const socket of record.agentSockets.values()) socket.close();
         for (const observer of record.observers) observer.close();
-        if (record.engine) engines.add(record.engine);
+        if (record.engine) engines.add(record);
       }
-      for (const engine of engines) engine.close();
+      for (const record of engines) closeEngine(record);
       agentWss.close();
       eventWss.close();
       if (httpServer) {

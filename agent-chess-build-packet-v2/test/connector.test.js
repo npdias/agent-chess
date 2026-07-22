@@ -6,6 +6,7 @@ import {
   chooseDemoAction,
   chooseDemoMove,
   createAgentRequest,
+  exchangeAgentSession,
   parseAgentAction,
   parseAgentOutput,
   runCommandAgent,
@@ -19,6 +20,17 @@ const turn = {
     { uci: 'g1f3', san: 'Nf3' },
   ],
 };
+
+test('exchanges seat capability for ticket WebSocket path without exposing it', async () => {
+  let request;
+  const wsPath = await exchangeAgentSession(async (url, options) => {
+    request = { url: String(url), options };
+    return { ok: true, json: async () => ({ wsPath: '/agent?ticket=short-lived' }) };
+  }, 'http://localhost:3000', 'capability-secret');
+  assert.equal(wsPath, '/agent?ticket=short-lived');
+  assert.equal(request.url, 'http://localhost:3000/api/agent-sessions');
+  assert.equal(request.options.headers.authorization, 'Bearer capability-secret');
+});
 
 test('parses JSON agent output with an optional trace summary', () => {
   const parsed = parseAgentOutput('{"moveUci":"e2e4","trace":{"phase":"planning","summary":"Claim the center."}}', turn);

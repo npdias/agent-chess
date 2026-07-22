@@ -3,6 +3,18 @@ import { spawn } from 'node:child_process';
 const SQUARE_PATTERN = /^[a-h][1-8]$/;
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 
+export async function exchangeAgentSession(fetchImpl, server, capability) {
+  const response = await fetchImpl(new URL('/api/agent-sessions', server), {
+    method: 'POST', headers: { authorization: `Bearer ${capability}` },
+  });
+  if (!response.ok) throw new Error(`AGENT_SESSION_FAILED_${response.status}`);
+  const session = await response.json();
+  if (typeof session?.wsPath !== 'string' || !session.wsPath.startsWith('/agent?ticket=')) {
+    throw new Error('INVALID_AGENT_SESSION');
+  }
+  return session.wsPath;
+}
+
 function parseTrace(parsed) {
   if (!parsed.trace?.summary) return null;
   return {
