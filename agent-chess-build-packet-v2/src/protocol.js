@@ -81,11 +81,23 @@ export function parseClientMessage(raw) {
   }
 
   if (message.type === MESSAGE_TYPES.TRACE_PUBLISH) {
-    if (typeof message.kind === 'string') parsed.kind = message.kind;
+    if (typeof message.kind === 'string') {
+      parsed.kind = message.kind === 'decision' ? 'decision' : 'status';
+    }
     if (typeof message.phase === 'string') parsed.phase = message.phase;
     if (typeof message.summary === 'string') parsed.summary = message.summary;
-    if (Array.isArray(message.candidates)) parsed.candidates = message.candidates;
+    if (Array.isArray(message.candidates)) {
+      if (message.candidates.some((candidate) => (
+        typeof candidate?.uci !== 'string' || !UCI_PATTERN.test(candidate.uci)
+      ))) {
+        throw new Error(ERROR_CODES.INVALID_MOVE_FORMAT);
+      }
+      parsed.candidates = message.candidates;
+    }
     if (typeof message.selectedMove === 'string' || message.selectedMove === null) {
+      if (typeof message.selectedMove === 'string' && !UCI_PATTERN.test(message.selectedMove)) {
+        throw new Error(ERROR_CODES.INVALID_MOVE_FORMAT);
+      }
       parsed.selectedMove = message.selectedMove;
     }
   }

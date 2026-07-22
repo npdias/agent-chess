@@ -154,6 +154,19 @@ test('broadcasts trace candidates in observer state', async () => {
     agent.send(JSON.stringify({
       type: 'trace.publish',
       turnId: turn.turnId,
+      summary: 'Malformed trace.',
+      candidates: [{ uci: 'e2e9', note: 'Invalid destination.' }],
+    }));
+    const rejected = await agentMessages.next((message) => message.type === 'move.rejected');
+    assert.equal(rejected.code, 'INVALID_MOVE_FORMAT');
+    assert.equal(rejected.turnId, turn.turnId);
+    const afterRejected = await fetch(`${address.httpUrl}/api/matches/${created.matchId}`).then((response) => response.json());
+    assert.equal(afterRejected.activity.some((entry) => entry.type === 'agent.trace'), false);
+
+    agent.send(JSON.stringify({
+      type: 'trace.publish',
+      turnId: turn.turnId,
+      kind: 'decision',
       phase: 'choose',
       summary: 'Prefer center.',
       candidates: [{ uci: 'e2e4', note: 'Controls d5.' }],
@@ -167,6 +180,7 @@ test('broadcasts trace candidates in observer state', async () => {
     const trace = state.match.activity.find((entry) => entry.type === 'agent.trace');
     assert.deepEqual(trace.candidates, [{ uci: 'e2e4', note: 'Controls d5.' }]);
     assert.equal(trace.selectedMove, 'e2e4');
+    assert.equal(trace.kind, 'decision');
     agent.close();
     observer.close();
   } finally {

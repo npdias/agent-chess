@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { AgentChessGame } from './game.js';
 
+const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
+
 export class MatchSession {
   constructor({
     id = randomUUID(),
@@ -35,13 +37,15 @@ export class MatchSession {
     return !this.game.snapshot().gameOver && this.game.snapshot().turn === this.agentColor;
   }
 
-  publishTrace({ turnId, phase = 'thinking', summary, candidates, selectedMove = null } = {}) {
+  publishTrace({ turnId, kind = 'status', phase = 'thinking', summary, candidates, selectedMove = null } = {}) {
     this._assertActiveTurn(turnId);
+    this._assertTraceMoves({ candidates, selectedMove });
     const clean = String(summary ?? '').trim();
     if (!clean) throw new Error('EMPTY_TRACE');
     const entry = this._recordActivity({
       type: 'agent.trace',
       source: 'agent',
+      kind: kind === 'decision' ? 'decision' : 'status',
       phase,
       turnId,
       summary: clean,
@@ -205,10 +209,22 @@ export class MatchSession {
     if (!this.isAgentTurn()) throw new Error('NOT_AGENT_TURN');
   }
 
-  _recordActivity({ type, source, phase, turnId = null, summary = '', candidates, selectedMove = null }) {
+  _assertTraceMoves({ candidates, selectedMove }) {
+    if (Array.isArray(candidates) && candidates.some((candidate) => (
+      typeof candidate?.uci !== 'string' || !UCI_PATTERN.test(candidate.uci)
+    ))) {
+      throw new Error('INVALID_MOVE_FORMAT');
+    }
+    if (typeof selectedMove === 'string' && !UCI_PATTERN.test(selectedMove)) {
+      throw new Error('INVALID_MOVE_FORMAT');
+    }
+  }
+
+  _recordActivity({ type, source, kind = null, phase, turnId = null, summary = '', candidates, selectedMove = null }) {
     const entry = {
       type,
       source,
+      kind,
       phase: String(phase ?? '').slice(0, 40),
       at: new Date().toISOString(),
       turnId,

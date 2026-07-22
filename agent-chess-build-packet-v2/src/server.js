@@ -13,6 +13,23 @@ function errorCode(error) {
   return code === 'ILLEGAL_MOVE' ? 'MOVE_NOT_LEGAL' : code;
 }
 
+function rejectedTurnId(raw) {
+  try {
+    const message = JSON.parse(raw.toString());
+    if (![
+      MESSAGE_TYPES.MOVES_LIST,
+      MESSAGE_TYPES.MOVES_LIST_ALL,
+      MESSAGE_TYPES.HISTORY_LIST,
+      MESSAGE_TYPES.MOVE_VALIDATE,
+      MESSAGE_TYPES.MOVE_SUBMIT,
+      MESSAGE_TYPES.TRACE_PUBLISH,
+    ].includes(message?.type)) return null;
+    return typeof message.turnId === 'string' && message.turnId.trim() ? message.turnId.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PUBLIC_DIR = join(ROOT, 'public');
 
@@ -214,7 +231,7 @@ export function createAgentChessServer({
           type: MESSAGE_TYPES.MOVE_REJECTED,
           code: errorCode(error),
           message: error.message,
-          turnId: message?.turnId ?? null,
+          turnId: message?.turnId ?? rejectedTurnId(raw),
         });
       }
     });

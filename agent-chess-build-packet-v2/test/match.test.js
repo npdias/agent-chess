@@ -191,3 +191,28 @@ test('sanitizes optional decision trace without fabricating agent activity', () 
   assert.equal(entry.selectedMove, 'e2e4');
   assert.deepEqual(match.snapshot().activity.at(-1), entry);
 });
+
+test('preserves decision trace kind and rejects malformed trace moves before mutation', () => {
+  const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
+  const turn = match.createTurnPayload();
+  const before = match.snapshot().activity;
+
+  assert.throws(
+    () => match.publishTrace({
+      turnId: turn.turnId,
+      summary: 'Invalid trace.',
+      candidates: [{ uci: 'e2e9', note: 'Malformed.' }],
+    }),
+    /INVALID_MOVE_FORMAT/
+  );
+  assert.deepEqual(match.snapshot().activity, before);
+
+  const entry = match.publishTrace({
+    turnId: turn.turnId,
+    kind: 'decision',
+    summary: 'Choose e4.',
+    selectedMove: 'e2e4',
+  });
+  assert.equal(entry.kind, 'decision');
+  assert.equal(match.snapshot().activity.at(-1).kind, 'decision');
+});

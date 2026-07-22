@@ -62,3 +62,17 @@ test('preserves normalized turn-scoped trace fields', () => {
     selectedMove: null,
   });
 });
+
+test('rejects malformed trace candidate and selected UCI values', () => {
+  for (const trace of [
+    { candidates: [{ uci: 'e2e9', note: 'Invalid destination.' }] },
+    { selectedMove: 'e2e9' },
+  ]) {
+    assert.throws(
+      () => parseClientMessage(JSON.stringify({
+        type: 'trace.publish', turnId: 'turn-1', summary: 'Choose e4.', ...trace,
+      })),
+      /INVALID_MOVE_FORMAT/
+    );
+  }
+});
