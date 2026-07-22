@@ -106,7 +106,7 @@ For an illegal well-formed candidate: `{ "legal": false, "san": null, "reason": 
 { "type": "move.accepted", "matchId": "UUID", "turnId": "UUID", "moveUci": "e2e4", "moveSan": "e4" }
 ```
 
-`opponent.move`: `{ "type": "opponent.move", "matchId": "UUID", "moveUci": "e7e5", "moveSan": "e5" }`. `game.end` contains `matchId`, `result`, `pgn`. `match.state` contains observer snapshot. `error` currently signals `ENGINE_FAILURE` plus message.
+`opponent.move`: `{ "type": "opponent.move", "matchId": "UUID", "moveUci": "e7e5", "moveSan": "e5" }`. `game.end` contains `matchId`, `result`, `pgn`, stable `status`, `termination`; failed matches additionally contain stable `failureCode`. Completed and aborted terminals have no `failureCode`. A stable `error` is sent before failed terminal delivery; it contains no raw diagnostics. Reference connector exits nonzero for `status: "failed"`, zero for completed or aborted terminals. `match.state` contains observer snapshot.
 
 ## Agent-to-server messages
 
@@ -146,7 +146,7 @@ Every request below needs active `turnId`. State change after accepted move inva
 }
 ```
 
-`trace.publish` broadcasts no direct reply; observers receive it plus updated `match.state`. It carries status/progress `phase` plus `summary` only; supplied decision fields, candidates, selected move are stripped. Accepted `move.submit` is sole path that emits `agent.decision`. Omitted `phase` becomes `thinking`. Empty or absent summary rejects. Service trims `phase` to 40 chars, `summary` to 500 chars.
+`trace.publish` broadcasts no direct reply; observers receive it plus updated `match.state`. It carries status/progress `phase` plus `summary` only; supplied decision fields, candidates, selected move are stripped. Malformed supplied decision fields can be rejected during validation before valid fields are stripped. Accepted `move.submit` is sole path that emits `agent.decision`. Omitted `phase` becomes `thinking`. Empty or absent summary rejects. Service trims `phase` to 40 chars, `summary` to 500 chars.
 
 ## Stable rejections
 

@@ -55,9 +55,18 @@ test('preserves bounded structured decision trace fields from command output', (
     },
   }), turn);
   assert.deepEqual(parsed.trace, {
-    kind: 'decision', phase: 'choose', summary: 'Claim center.',
+    source: 'agent_reported', kind: 'decision', phase: 'choose', summary: 'Claim center.',
     candidates: [{ uci: 'e2e4', note: 'Space.' }], selectedMove: 'e2e4',
   });
+});
+
+test('preserves an allowed command trace source and defaults absent source to agent reported', () => {
+  const provider = parseAgentOutput(JSON.stringify({
+    moveUci: 'e2e4', trace: { source: 'provider_summary', summary: 'Provider selected center.' },
+  }), turn);
+  const defaulted = parseAgentOutput('{"moveUci":"e2e4","trace":{"summary":"Selected center."}}', turn);
+  assert.equal(provider.trace.source, 'provider_summary');
+  assert.equal(defaulted.trace.source, 'agent_reported');
 });
 
 test('accepts a bare UCI move from a simple command harness', () => {
@@ -79,6 +88,7 @@ test('demo move trace names its selected legal candidate', () => {
 
   assert.deepEqual(action.trace.candidates, [{ uci: 'e2e4', note: 'Demo legal candidate.' }]);
   assert.equal(action.trace.selectedMove, 'e2e4');
+  assert.equal(action.trace.source, 'adapter_generated');
 });
 
 test('parses a progressive piece probe action', () => {

@@ -26,6 +26,7 @@ export class MatchSession {
     });
     this.status = 'waiting';
     this.termination = null;
+    this.failureCode = null;
     this.resultOverride = null;
     this.pendingGuidance = null;
     this.currentTurnId = null;
@@ -204,6 +205,7 @@ export class MatchSession {
     const failureCode = FAILURE_CODES.has(code) ? code : 'MATCH_FAILURE';
     this.status = 'failed';
     this.termination = 'failure';
+    this.failureCode = failureCode;
     this.game.chess.header('Result', '*', 'Termination', this.termination);
     this._closeActiveTurn();
     this._recordActivity({
@@ -285,6 +287,7 @@ export class MatchSession {
       clock: structuredClone(this.clock),
       status: this.status,
       termination: this.termination,
+      ...(this.status === 'failed' ? { failureCode: this.failureCode } : {}),
       steeringMode: this.steeringMode,
       createdAt: this.createdAt,
       trace: [],
@@ -312,6 +315,7 @@ export class MatchSession {
       config,
       status: this.status,
       termination: this.termination,
+      ...(this.status === 'failed' ? { failureCode: this.failureCode } : {}),
       result: this.resultOverride ?? this.game.result(),
       pgn: this.game.pgn(),
       activity: this.snapshot().activity,

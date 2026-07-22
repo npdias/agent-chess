@@ -103,6 +103,7 @@ test('renders exact public trace disclosure source separate from transport actor
   assert.equal(formatted.source, 'agent');
   assert.equal(formatted.disclosureSource, 'agent_reported');
   assert.equal(formatted.disclosureLabel, 'Agent reported');
+  assert.equal(formatted.label, 'Decision');
   assert.equal(formatActivity({ type: 'agent.trace', source: 'provider_summary' }).disclosureLabel, 'Provider summary');
   assert.equal(formatActivity({ type: 'agent.trace', source: 'adapter_generated' }).disclosureLabel, 'Adapter generated');
 });

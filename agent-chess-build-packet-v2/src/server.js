@@ -134,11 +134,15 @@ export function createAgentChessServer({
   }
 
   function terminalMessage(record) {
+    const snapshot = record.session.snapshot();
     const ended = {
       type: MESSAGE_TYPES.GAME_END,
       matchId: record.session.id,
-      result: record.session.snapshot().game.result,
+      result: snapshot.game.result,
       pgn: record.session.game.pgn(),
+      status: snapshot.status,
+      termination: snapshot.termination,
+      ...(snapshot.status === 'failed' ? { failureCode: snapshot.failureCode } : {}),
     };
     return ended;
   }
@@ -173,6 +177,7 @@ export function createAgentChessServer({
     record.decisionTimer = setTimeout(() => {
       if (record.session.activeTurn()?.turnId !== turn.turnId || record.session.isTerminal()) return;
       record.session.fail('AGENT_FAILURE', 'Decision deadline exceeded');
+      signalFailure(record, 'AGENT_FAILURE', 'Agent decision deadline exceeded');
       emitTerminal(record);
     }, record.decisionDeadlineMs);
   }
@@ -183,6 +188,12 @@ export function createAgentChessServer({
 
   function broadcastState(record) {
     broadcast(record, { type: MESSAGE_TYPES.STATE, match: publicSnapshot(record) });
+  }
+
+  function signalFailure(record, code, message) {
+    const event = { type: MESSAGE_TYPES.ERROR, code, message, recoverable: false };
+    for (const socket of record.agentSockets.values()) safeSend(socket, event);
+    broadcast(record, event);
   }
 
   async function advance(record) {
@@ -227,10 +238,8 @@ export function createAgentChessServer({
       record.engineFailed = true;
       record.session.recordSystemError('Engine unavailable', 'ENGINE_FAILURE');
       record.session.fail('ENGINE_FAILURE');
+      signalFailure(record, 'ENGINE_FAILURE', 'Engine unavailable');
       emitTerminal(record);
-      const event = { type: MESSAGE_TYPES.ERROR, code: 'ENGINE_FAILURE', message: 'Engine unavailable', recoverable: true };
-      for (const socket of record.agentSockets.values()) safeSend(socket, event);
-      broadcast(record, event);
       broadcastState(record);
     } finally {
       record.advancing = false;

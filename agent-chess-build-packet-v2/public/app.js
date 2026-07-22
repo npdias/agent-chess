@@ -98,7 +98,7 @@ export function formatActivity(entry = {}) {
   const tracePhase = TURN_PHASES.find((phase) => phase.key === (PHASE_ALIASES[entry.phase] ?? entry.phase));
   const traceLabel = tracePhase?.label ?? (entry.kind === 'decision' ? 'Decision' : source === 'connector' ? 'Connector status' : 'Status');
   return {
-    label: entry.type === 'agent.trace' ? traceLabel : (typeLabels[entry.type] ?? 'System event'),
+    label: entry.type === 'agent.decision' ? 'Decision' : entry.type === 'agent.trace' ? traceLabel : (typeLabels[entry.type] ?? 'System event'),
     meta,
     detail: entry.summary?.trim() || entry.message?.trim() || fallback,
     source,

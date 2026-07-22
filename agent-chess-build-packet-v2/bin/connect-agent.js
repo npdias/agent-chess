@@ -35,7 +35,7 @@ export async function run(args) {
   let commandRounds = 0;
 
   function publish(turnId, trace) {
-    if (activeTurn?.mode !== 'private_eval') socket.send(JSON.stringify({ type: 'trace.publish', turnId, ...trace }));
+    if (activeTurn?.mode !== 'private_eval') socket.send(JSON.stringify({ type: 'trace.publish', turnId, source: 'adapter_generated', ...trace }));
   }
 
   function fail(message) {
@@ -90,7 +90,8 @@ export async function run(args) {
     if (message.type === 'game.end') {
       console.log(`Game over: ${message.result}`);
       console.log(message.pgn);
-      return socket.close(1000, 'game complete');
+      if (message.status === 'failed') process.exitCode = 1;
+      return socket.close(message.status === 'failed' ? 1011 : 1000, message.status === 'failed' ? 'match failed' : 'game complete');
     }
     if (message.type !== 'turn.start' || busy) return;
     activeTurn = { ...message, probeResults: {} };

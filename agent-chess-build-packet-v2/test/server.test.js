@@ -434,7 +434,69 @@ test('sends protocol game.end once for natural completion, resignation, and deci
     await deadlineAgent.messages.next((message) => message.type === 'turn.start');
     const deadlineEnd = await deadlineAgent.messages.next((message) => message.type === 'game.end');
     assert.equal(deadlineEnd.result, '*');
+    assert.deepEqual({ status: deadlineEnd.status, termination: deadlineEnd.termination, failureCode: deadlineEnd.failureCode }, {
+      status: 'failed', termination: 'failure', failureCode: 'AGENT_FAILURE',
+    });
+    const deadlineError = await deadlineAgent.messages.next((message) => message.type === 'error');
+    assert.equal(deadlineError.code, 'AGENT_FAILURE');
+    assert.doesNotMatch(JSON.stringify([deadlineEnd, deadlineError]), /Decision deadline exceeded/);
+    assert.equal(deadlineAgent.messages.count((message) => message.type === 'game.end'), 1);
     deadlineAgent.socket.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('preserves provider summary provenance through connector protocol server and public snapshot', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const ticket = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    }).then((response) => response.json());
+    const socket = new WebSocket(`${address.wsUrl}${ticket.wsPath}`);
+    const messages = collectMessages(socket);
+    await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+    const turn = await messages.next((message) => message.type === 'turn.start');
+    socket.send(JSON.stringify({
+      type: 'move.submit', turnId: turn.turnId, moveUci: 'e2e4',
+      publicTrace: { source: 'provider_summary', summary: 'Provider picked center.', candidates: [{ uci: 'e2e4' }], selectedMove: 'e2e4' },
+    }));
+    await messages.next((message) => message.type === 'move.accepted');
+    const state = await getMatch(address, created.matchId);
+    assert.equal(state.activity.find((entry) => entry.type === 'agent.decision').source, 'provider_summary');
+    socket.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('reference connector exits nonzero after stable decision-deadline failure', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public', decisionDeadlineMs: 30,
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const child = spawn(process.execPath, [
+      'bin/connect-agent.js', '--server', address.httpUrl, '--seat', created.capabilities.white,
+      '--command', 'node test/fixtures/slow-legal-agent.js',
+    ], { cwd: new URL('..', import.meta.url) });
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const [code] = await once(child, 'close');
+    assert.equal(code, 1);
+    assert.doesNotMatch(`${stdout}\n${stderr}`, /Decision deadline exceeded/);
+    const snapshot = await getMatch(address, created.matchId);
+    assert.deepEqual({ status: snapshot.status, termination: snapshot.termination, failureCode: snapshot.failureCode }, {
+      status: 'failed', termination: 'failure', failureCode: 'AGENT_FAILURE',
+    });
   } finally {
     await server.stop();
   }
@@ -588,6 +650,9 @@ test('engine failures never expose raw diagnostics', async () => {
     const snapshot = await getMatch(address, created.matchId);
     const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`).then((response) => response.json());
     assert.equal(JSON.stringify({ snapshot, exported }).includes(secret), false);
+    assert.equal(snapshot.status, 'failed');
+    assert.equal(snapshot.termination, 'failure');
+    assert.equal(snapshot.failureCode, 'ENGINE_FAILURE');
     assert.ok(snapshot.activity.some((entry) => entry.code === 'ENGINE_FAILURE' && entry.summary === 'Engine unavailable'));
   } finally {
     await server.stop();
@@ -751,7 +816,12 @@ test('pauses after an engine failure and stores a visible recoverable error', as
     const turn = await messages.next((message) => message.type === 'turn.start');
     agent.send(JSON.stringify({ type: 'move.submit', turnId: turn.turnId, moveUci: 'e2e4' }));
     const failure = await messages.next((message) => message.type === 'error' && message.code === 'ENGINE_FAILURE');
-    assert.equal(failure.recoverable, true);
+    assert.equal(failure.recoverable, false);
+    const ended = await messages.next((message) => message.type === 'game.end');
+    assert.deepEqual({ status: ended.status, termination: ended.termination, failureCode: ended.failureCode }, {
+      status: 'failed', termination: 'failure', failureCode: 'ENGINE_FAILURE',
+    });
+    assert.equal(messages.count((message) => message.type === 'game.end'), 1);
     await new Promise((resolve) => setTimeout(resolve, 25));
     const state = await fetch(`${address.httpUrl}/api/matches/${created.matchId}`).then((response) => response.json());
     assert.equal(calls, 1);

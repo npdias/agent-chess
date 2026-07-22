@@ -56,7 +56,7 @@ socket.on('message', async (raw) => {
   if (message.type === 'turn.start') {
     if (submitted >= maxTurns) return;
     activeTurn = { ...message, probeResults: {} };
-    socket.send(JSON.stringify({ type: 'trace.publish', turnId: activeTurn.turnId, phase: 'evaluate', summary: 'Smoke agent evaluating.' }));
+    socket.send(JSON.stringify({ type: 'trace.publish', turnId: activeTurn.turnId, source: 'adapter_generated', phase: 'evaluate', summary: 'Smoke agent evaluating.' }));
     const action = chooseDemoAction(activeTurn);
     socket.send(JSON.stringify({ type: 'moves.list', turnId: activeTurn.turnId, square: action.probeSquare }));
     return;
@@ -65,7 +65,7 @@ socket.on('message', async (raw) => {
     activeTurn = cacheProbe(activeTurn, message);
     const action = chooseDemoAction(activeTurn);
     const candidate = validateLocalCandidate(activeTurn, action.moveUci);
-    socket.send(JSON.stringify({ type: 'trace.publish', turnId: activeTurn.turnId, phase: 'choose', summary: `Smoke agent selecting ${candidate.moveUci}.` }));
+    socket.send(JSON.stringify({ type: 'trace.publish', turnId: activeTurn.turnId, source: 'adapter_generated', phase: 'choose', summary: `Smoke agent selecting ${candidate.moveUci}.` }));
     socket.send(JSON.stringify({
       type: 'move.submit', turnId: activeTurn.turnId, moveUci: candidate.moveUci,
       publicTrace: { ...action.trace, selectedMove: candidate.moveUci },

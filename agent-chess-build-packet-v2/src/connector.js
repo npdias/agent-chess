@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 
 const SQUARE_PATTERN = /^[a-h][1-8]$/;
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
+const TRACE_SOURCES = new Set(['agent_reported', 'provider_summary', 'adapter_generated']);
 
 export async function exchangeAgentSession(fetchImpl, server, capability) {
   const response = await fetchImpl(new URL('/api/agent-sessions', server), {
@@ -18,6 +19,7 @@ export async function exchangeAgentSession(fetchImpl, server, capability) {
 function parseTrace(parsed) {
   if (!parsed.trace?.summary) return null;
   return {
+    source: TRACE_SOURCES.has(parsed.trace.source) ? parsed.trace.source : 'agent_reported',
     kind: parsed.trace.kind === 'decision' ? 'decision' : 'status',
     phase: String(parsed.trace.phase ?? 'thinking').slice(0, 40),
     summary: String(parsed.trace.summary).slice(0, 1000),
@@ -44,7 +46,7 @@ export function chooseDemoAction(turn) {
   if (moveUci) return {
     moveUci,
     trace: {
-      phase: 'demo', summary: 'Demo connector selected a cached legal move.',
+      source: 'adapter_generated', phase: 'demo', summary: 'Demo connector selected a cached legal move.',
       candidates: [{ uci: moveUci, note: 'Demo legal candidate.' }], selectedMove: moveUci,
     },
   };
@@ -52,7 +54,7 @@ export function chooseDemoAction(turn) {
   const movable = new Set((turn.positionStatus?.movablePieces ?? []).map((piece) => piece.square));
   const probeSquare = preference.find((square) => movable.has(square)) ?? turn.positionStatus?.movablePieces?.[0]?.square;
   if (!probeSquare) throw new Error('NO_MOVABLE_PIECE');
-  return { probeSquare, trace: { phase: 'demo', summary: `Demo connector probing ${probeSquare}.` } };
+  return { probeSquare, trace: { source: 'adapter_generated', phase: 'demo', summary: `Demo connector probing ${probeSquare}.` } };
 }
 
 export function parseAgentAction(stdout) {
