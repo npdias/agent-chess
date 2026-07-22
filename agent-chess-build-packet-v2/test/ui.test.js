@@ -200,7 +200,7 @@ test('uses a desktop height-density rule to keep the square board in one viewpor
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
   assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.board\s*\{[^}]*width:\s*100%[^}]*aspect-ratio:\s*1/);
-  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.status-line,\s*\.phase-ribbon,\s*\.player-strip,\s*\.board-footer\s*\{[^}]*width:\s*100%/);
+  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.status-line,\s*\.player-strip,\s*\.board-footer\s*\{[^}]*width:\s*100%/);
 });
 
 test('allows the local connector command to shrink on narrow screens', async () => {
@@ -342,11 +342,22 @@ test('keeps match tools available in focus mode', async () => {
 test('budgets full desktop board stack within a 720px viewport', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
   const chrome = Number(css.match(/--desktop-fixed-chrome:\s*(\d+)px/)?.[1]);
-  assert.equal(chrome, 300);
+  assert.equal(chrome, 250);
   assert.equal(720 - chrome + chrome <= 720, true);
+  const board = 720 - chrome;
+  assert.equal(board + 235 <= 705, true);
+  assert.equal(board + 144 <= 720, true);
   assert.match(css, /--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*var\(--desktop-fixed-chrome\)\),\s*calc\(100vw\s*-\s*492px\)\)/);
   assert.match(css, /\.match-active,\s*\.match-active body\s*\{[^}]*height:\s*100dvh[^}]*overflow:\s*hidden/);
   assert.match(css, /\.board-footer\s*\{[^}]*max-height:\s*24px/);
+});
+
+test('removes obsolete phase tab summary and legacy rail CSS', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+  for (const selector of ['phase-ribbon', 'phase-steps', 'status-panel', 'status-primary', 'summary-grid', 'tab-panel', 'tab-content', 'live-label', 'lifecycle-panel', 'position-line']) {
+    assert.doesNotMatch(css, new RegExp(`\\.${selector}\\b`));
+  }
+  assert.doesNotMatch(css, /\.tabs\b|\.tab\b/);
 });
 
 test('removes obsolete tab controller after native details migration', async () => {
