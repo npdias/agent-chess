@@ -117,7 +117,7 @@ export class MatchSession {
 
   recordSystemError(message, code = null) {
     return this._recordActivity({
-      type: 'error', source: 'system', summary: String(message ?? 'Match paused'), code,
+      type: 'error', source: 'system', summary: String(message ?? 'Match paused'), code, recoverable: false,
     });
   }
 
@@ -363,7 +363,7 @@ export class MatchSession {
     }
   }
 
-  _recordActivity({ type, source, actor = null, kind = null, phase, turnId = null, summary = '', candidates, selectedMove = null, code = null }) {
+  _recordActivity({ type, source, actor = null, kind = null, phase, turnId = null, summary = '', candidates, selectedMove = null, code = null, recoverable = null }) {
     const entry = {
       type,
       source,
@@ -381,6 +381,7 @@ export class MatchSession {
         : [],
       selectedMove: selectedMove ? String(selectedMove).trim() : null,
       ...(code ? { code } : {}),
+      ...(typeof recoverable === 'boolean' ? { recoverable } : {}),
     };
     this.activity.push(entry);
     return entry;

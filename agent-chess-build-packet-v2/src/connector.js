@@ -17,10 +17,10 @@ export async function exchangeAgentSession(fetchImpl, server, capability) {
 }
 
 function parseTrace(parsed) {
-  if (!parsed.trace?.summary) return null;
-  const suppliedSource = typeof parsed.trace.source === 'string' ? parsed.trace.source.trim() : parsed.trace.source;
+  const suppliedSource = typeof parsed.trace?.source === 'string' ? parsed.trace.source.trim() : parsed.trace?.source;
   const source = suppliedSource == null || suppliedSource === '' ? 'agent_reported' : suppliedSource;
   if (!TRACE_SOURCES.has(source)) throw new Error('INVALID_TRACE_SOURCE');
+  if (!parsed.trace?.summary) return null;
   return {
     source,
     kind: parsed.trace.kind === 'decision' ? 'decision' : 'status',

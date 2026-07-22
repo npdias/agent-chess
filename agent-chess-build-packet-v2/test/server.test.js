@@ -6,7 +6,7 @@ import { Chess } from 'chess.js';
 import WebSocket from 'ws';
 import { createAgentChessServer } from '../src/server.js';
 import { runSmoke } from '../bin/smoke-human.js';
-import { shellQuote } from '../public/app.js';
+import { formatActivity, shellQuote } from '../public/app.js';
 
 class FakeStockfish {
   async bestMove(fen) {
@@ -865,7 +865,9 @@ test('fails after an engine error and stores a visible nonrecoverable error', as
     await new Promise((resolve) => setTimeout(resolve, 25));
     const state = await fetch(`${address.httpUrl}/api/matches/${created.matchId}`).then((response) => response.json());
     assert.equal(calls, 1);
-    assert.ok(state.activity.some((entry) => entry.type === 'error' && entry.summary === 'Engine unavailable'));
+    const failureActivity = state.activity.find((entry) => entry.type === 'error' && entry.summary === 'Engine unavailable');
+    assert.equal(failureActivity.recoverable, false);
+    assert.equal(formatActivity(failureActivity).label, 'Match failed');
     agent.close();
   } finally {
     await server.stop();

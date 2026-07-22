@@ -83,6 +83,18 @@ test('rejects an explicit unsupported command trace source', () => {
   })), /INVALID_TRACE_SOURCE/);
 });
 
+test('rejects an unsupported command trace source when summary is absent', () => {
+  assert.throws(() => parseAgentAction(JSON.stringify({
+    moveUci: 'e2e4', trace: { source: 'System' },
+  })), /INVALID_TRACE_SOURCE/);
+});
+
+test('rejects an unsupported command trace source when summary is empty', () => {
+  assert.throws(() => parseAgentAction(JSON.stringify({
+    moveUci: 'e2e4', trace: { source: 'System', summary: '' },
+  })), /INVALID_TRACE_SOURCE/);
+});
+
 test('rejects unsupported trace provenance returned by a command before submission', async () => {
   await assert.rejects(
     runCommandAgent('node test/fixtures/invalid-trace-source-agent.js', turn, { timeoutMs: 2000 }),
