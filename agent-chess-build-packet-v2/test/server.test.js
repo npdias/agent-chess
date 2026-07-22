@@ -35,6 +35,7 @@ function collectMessages(socket) {
 
   return {
     count(predicate) { return seen.filter(predicate).length; },
+    ordered() { return [...seen]; },
     next(predicate = () => true, timeoutMs = 3000) {
       const index = queue.findIndex(predicate);
       if (index >= 0) return Promise.resolve(queue.splice(index, 1)[0]);
@@ -439,6 +440,9 @@ test('sends protocol game.end once for natural completion, resignation, and deci
     });
     const deadlineError = await deadlineAgent.messages.next((message) => message.type === 'error');
     assert.equal(deadlineError.code, 'AGENT_FAILURE');
+    const deadlineEvents = deadlineAgent.messages.ordered();
+    assert.ok(deadlineEvents.findIndex((message) => message.type === 'error' && message.code === 'AGENT_FAILURE')
+      < deadlineEvents.findIndex((message) => message.type === 'game.end'));
     assert.doesNotMatch(JSON.stringify([deadlineEnd, deadlineError]), /Decision deadline exceeded/);
     assert.equal(deadlineAgent.messages.count((message) => message.type === 'game.end'), 1);
     deadlineAgent.socket.close();
@@ -497,6 +501,39 @@ test('reference connector exits nonzero after stable decision-deadline failure',
     assert.deepEqual({ status: snapshot.status, termination: snapshot.termination, failureCode: snapshot.failureCode }, {
       status: 'failed', termination: 'failure', failureCode: 'AGENT_FAILURE',
     });
+  } finally {
+    await server.stop();
+  }
+});
+
+test('reference connector exits nonzero on engine failure without raw diagnostics', async () => {
+  const secret = 'engine-child-secret-diagnostic';
+  const server = createAgentChessServer({ stockfishFactory: async () => ({
+    async bestMove() { throw new Error(secret); }, close() {},
+  }) });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, { agentColor: 'white' });
+    const observer = new WebSocket(`${address.wsUrl}/events?matchId=${created.matchId}`);
+    const observerMessages = collectMessages(observer);
+    await new Promise((resolve, reject) => { observer.once('open', resolve); observer.once('error', reject); });
+    const child = spawn(process.execPath, [
+      'bin/connect-agent.js', '--server', address.httpUrl, '--seat', created.seatToken, '--demo',
+    ], { cwd: new URL('..', import.meta.url) });
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const [code] = await once(child, 'close');
+    const error = await observerMessages.next((message) => message.type === 'error');
+    await observerMessages.next((message) => message.type === 'game.end');
+    assert.equal(code, 1);
+    assert.deepEqual(error, { type: 'error', code: 'ENGINE_FAILURE', message: 'Engine unavailable', recoverable: false });
+    assert.equal(observerMessages.count((message) => message.type === 'game.end'), 1);
+    assert.doesNotMatch(`${stdout}\n${stderr}`, new RegExp(secret));
+    const events = observerMessages.ordered();
+    assert.ok(events.findIndex((message) => message.type === 'error' && message.code === 'ENGINE_FAILURE')
+      < events.findIndex((message) => message.type === 'game.end'));
+    observer.close();
   } finally {
     await server.stop();
   }
@@ -822,6 +859,9 @@ test('pauses after an engine failure and stores a visible recoverable error', as
       status: 'failed', termination: 'failure', failureCode: 'ENGINE_FAILURE',
     });
     assert.equal(messages.count((message) => message.type === 'game.end'), 1);
+    const events = messages.ordered();
+    assert.ok(events.findIndex((message) => message.type === 'error' && message.code === 'ENGINE_FAILURE')
+      < events.findIndex((message) => message.type === 'game.end'));
     await new Promise((resolve) => setTimeout(resolve, 25));
     const state = await fetch(`${address.httpUrl}/api/matches/${created.matchId}`).then((response) => response.json());
     assert.equal(calls, 1);
