@@ -155,8 +155,8 @@ test('keeps phase ribbon and activity rail visible outside secondary tabs', asyn
 test('uses a desktop height-density rule to keep the square board in one viewport', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-  assert.match(css, /@media \(min-width: 1021px\) and \(max-height: 1250px\)[\s\S]*?\.board\s*\{[^}]*width:\s*100%[^}]*aspect-ratio:\s*1/);
-  assert.match(css, /@media \(min-width: 1021px\) and \(max-height: 1250px\)[\s\S]*?\.phase-ribbon,\s*\.player-strip,\s*\.board-footer\s*\{[^}]*width:\s*100%/);
+  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.board\s*\{[^}]*width:\s*100%[^}]*aspect-ratio:\s*1/);
+  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.phase-ribbon,\s*\.player-strip,\s*\.board-footer\s*\{[^}]*width:\s*100%/);
 });
 
 test('allows the local connector command to shrink on narrow screens', async () => {
@@ -169,9 +169,17 @@ test('allows the local connector command to shrink on narrow screens', async () 
 test('centers a height-bound desktop board beside an equal-height activity rail', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-  assert.match(css, /@media \(min-width: 1021px\) and \(max-height: 1250px\)[\s\S]*?--live-board-size:\s*min\(calc\(100dvh\s*-\s*290px\),\s*calc\(100vw\s*-\s*492px\)\)/);
+  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*290px\),\s*calc\(100vw\s*-\s*492px\)\)/);
   assert.match(css, /\.match-layout\s*\{[^}]*grid-template-columns:\s*var\(--live-board-size\)\s+minmax\(360px,\s*440px\)[^}]*justify-content:\s*center/);
   assert.match(css, /\.board-stage\s*\{[^}]*width:\s*var\(--live-board-size\)/);
-  assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(100dvh\s*-\s*80px\)[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*210px\)[^}]*overflow-y:\s*auto/);
   assert.match(css, /\.activity-panel\s*\{[^}]*flex:\s*1\s+1\s+0/);
+});
+
+test('caps the aligned desktop board and derives rail height from it at every desktop height', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+
+  assert.match(css, /@media \(min-width: 1021px\)\s*\{[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*290px\),\s*calc\(100vw\s*-\s*492px\)\)/);
+  assert.doesNotMatch(css, /@media \(min-width: 1021px\) and \(max-height: 1250px\)/);
+  assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*210px\)/);
 });

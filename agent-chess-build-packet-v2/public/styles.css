@@ -153,11 +153,11 @@ h1, h2, h3, p { margin-top: 0; }
 .analysis-note { color: var(--muted-2); font-size: .7rem; line-height: 1.45; margin: 12px 0 0; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: #eef2eb; color: #182015; padding: 10px 14px; border-radius: 7px; font-weight: 750; transition: .18s ease; z-index: 100; }
 .toast.visible { opacity: 1; transform: translate(-50%, 0); }
-@media (min-width: 1021px) and (max-height: 1250px) {
+@media (min-width: 1021px) {
   .topbar { height: 48px; }
   .brand-mark { width: 28px; height: 28px; }
   .app-shell { padding: 8px 18px; }
-  .match-layout { --live-board-size: min(calc(100dvh - 290px), calc(100vw - 492px)); grid-template-columns: var(--live-board-size) minmax(360px, 440px); gap: 16px; justify-content: center; }
+  .match-layout { --live-board-size: min(820px, calc(100dvh - 290px), calc(100vw - 492px)); grid-template-columns: var(--live-board-size) minmax(360px, 440px); gap: 16px; justify-content: center; }
   .board-stage { width: var(--live-board-size); }
   .match-context { min-height: 30px; margin-bottom: 0; }
   .match-context .eyebrow { margin-bottom: 1px; font-size: .62rem; }
@@ -173,7 +173,7 @@ h1, h2, h3, p { margin-top: 0; }
   .board { width: 100%; aspect-ratio: 1; }
   .board-footer { margin-top: 3px; }
   .ghost-button, .text-button { padding-block: 5px; }
-  .control-rail { height: calc(100dvh - 80px); max-height: none; display: flex; flex-direction: column; overflow-y: auto; padding-bottom: 2px; }
+  .control-rail { height: calc(var(--live-board-size) + 210px); max-height: none; display: flex; flex-direction: column; overflow-y: auto; padding-bottom: 2px; }
   .connector-card, .panel { padding: 11px; }
   .control-rail { gap: 8px; }
   .status-panel { gap: 9px; }
