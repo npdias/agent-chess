@@ -8,7 +8,7 @@ import {
   capabilityStorageEntries,
   deriveExhibitionSummary,
   materialSummary,
-  replayPlyForRow,
+  replayPlyForMove,
   controllerColor,
   consumeSuppressedClick,
   displayedSeats,
@@ -179,9 +179,11 @@ test('derives captured piece names and side-relative material difference', () =>
   assert.deepEqual(materialSummary(initial, current, 'white'), { captured: ['black pawn'], difference: 1 });
 });
 
-test('maps a move row to its final ply for keyboard replay', () => {
-  assert.equal(replayPlyForRow(0, true, 5), 2);
-  assert.equal(replayPlyForRow(2, false, 5), 5);
+test('maps each SAN replay button to its exact ply', () => {
+  assert.equal(replayPlyForMove(0, 'white'), 1);
+  assert.equal(replayPlyForMove(0, 'black'), 2);
+  assert.equal(replayPlyForMove(2, 'white'), 5);
+  assert.equal(replayPlyForMove(2, 'black'), 6);
 });
 
 test('does not give a spectator human controls without a private capability', () => {

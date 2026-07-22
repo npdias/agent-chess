@@ -144,6 +144,27 @@ test('resignation completes a match once and is idempotent', () => {
   assert.equal(match.isTerminal(), true);
 });
 
+test('terminal lifecycle writes matching PGN result and termination headers', () => {
+  const resigned = new MatchSession(publicHumanEngineConfig);
+  resigned.resign('white');
+  assert.equal(resigned.snapshot().game.result, '0-1');
+  assert.match(resigned.exportRecord().pgn, /\[Result "0-1"\]/);
+  assert.match(resigned.exportRecord().pgn, /\[Termination "resignation"\]/);
+  assert.match(resigned.exportRecord().pgn, /0-1$/);
+
+  const aborted = new MatchSession(publicHumanEngineConfig);
+  aborted.abort('white');
+  assert.equal(aborted.snapshot().game.result, '*');
+  assert.match(aborted.exportRecord().pgn, /\[Result "\*"\]/);
+  assert.match(aborted.exportRecord().pgn, /\[Termination "aborted"\]/);
+
+  const failed = new MatchSession(publicHumanEngineConfig);
+  failed.fail('ENGINE_FAILURE');
+  assert.equal(failed.snapshot().game.result, '*');
+  assert.match(failed.exportRecord().pgn, /\[Result "\*"\]/);
+  assert.match(failed.exportRecord().pgn, /\[Termination "failure"\]/);
+});
+
 test('aborts only before first move', () => {
   const match = new MatchSession(publicHumanEngineConfig);
   assert.equal(match.abort('white').status, 'aborted');
@@ -166,6 +187,8 @@ test('checkmate move completes lifecycle and later controls retain completion', 
   assert.deepEqual(match.snapshot().game.result, '0-1');
   assert.equal(match.snapshot().status, 'completed');
   assert.equal(match.snapshot().termination, 'checkmate');
+  assert.match(match.exportRecord().pgn, /\[Result "0-1"\]/);
+  assert.match(match.exportRecord().pgn, /\[Termination "checkmate"\]/);
   assert.equal(match.activeTurn(), null);
   assert.deepEqual(match.abort('white'), {
     status: 'completed', termination: 'checkmate', result: '0-1',
@@ -183,6 +206,9 @@ test('draw move completes lifecycle', () => {
   assert.equal(match.snapshot().game.result, '1/2-1/2');
   assert.equal(match.snapshot().status, 'completed');
   assert.equal(match.snapshot().termination, 'draw');
+  assert.match(match.exportRecord().pgn, /\[Result "1\/2-1\/2"\]/);
+  assert.match(match.exportRecord().pgn, /\[Termination "draw"\]/);
+  assert.match(match.exportRecord().pgn, /1\/2-1\/2$/);
   assert.equal(match.activeTurn(), null);
 });
 
@@ -226,6 +252,18 @@ test('exports config, PGN, and activity without internal controller fields', () 
   assert.ok(record.activity.some((entry) => entry.type === 'move.submit'));
   assert.equal('currentTurnId' in record, false);
   assert.equal('currentTurnPayload' in record, false);
+});
+
+test('omits engine config from non-engine match export', () => {
+  const match = new MatchSession({
+    mode: 'exhibition', visibility: 'public', clock: { kind: 'none' },
+    seats: {
+      white: { kind: 'human', name: 'Human' },
+      black: { kind: 'agent', name: 'Agent' },
+    },
+  });
+
+  assert.equal('engine' in match.exportRecord().config, false);
 });
 
 test('locked matches reject steering', () => {

@@ -1,4 +1,4 @@
-import { canHumanMove, selectHumanSquare, buildHumanMove, capabilityStorageEntries, deriveExhibitionSummary, materialSummary, replayPlyForRow, controllerColor, consumeSuppressedClick, displayedSeats } from './board-interaction.js';
+import { canHumanMove, selectHumanSquare, buildHumanMove, capabilityStorageEntries, deriveExhibitionSummary, materialSummary, replayPlyForMove, controllerColor, consumeSuppressedClick, displayedSeats } from './board-interaction.js';
 
 const PIECES = {
   K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
@@ -261,8 +261,17 @@ function renderMoves(match) {
     const row = document.createElement('div');
     row.className = `move-row ${index === rows.length - 1 ? 'current' : ''}`;
     row.classList.add('move-row');
-    row.replaceChildren(...[move.number + '.', move.white, move.black].map((value) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = value; return button; }));
-    row.addEventListener('click', () => { replayPly = replayPlyForRow(index, Boolean(move.black), match.game.movesSan.length); qs('return-live').hidden = false; renderBoard(match); });
+    const number = document.createElement('span');
+    number.textContent = move.number + '.';
+    row.append(number);
+    for (const [color, san] of [['white', move.white], ['black', move.black]]) {
+      if (!san) continue;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = san;
+      button.addEventListener('click', () => { replayPly = replayPlyForMove(index, color); qs('return-live').hidden = false; renderBoard(match); });
+      row.append(button);
+    }
     list.append(row);
   });
   list.scrollTop = list.scrollHeight;

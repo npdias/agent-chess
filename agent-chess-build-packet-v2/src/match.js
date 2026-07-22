@@ -181,6 +181,7 @@ export class MatchSession {
     this.resultOverride = color === 'white' ? '0-1' : '1-0';
     this.status = 'completed';
     this.termination = 'resignation';
+    this.game.chess.header('Result', this.resultOverride, 'Termination', this.termination);
     this._closeActiveTurn();
     this._recordActivity({ type: 'match.resign', source: 'system', phase: 'complete', summary: `${color} resigned` });
     return this._completion();
@@ -192,6 +193,7 @@ export class MatchSession {
     if (this.game.snapshot().ply > 0) throw new Error('ABORT_NOT_ALLOWED');
     this.status = 'aborted';
     this.termination = 'aborted';
+    this.game.chess.header('Result', '*', 'Termination', this.termination);
     this._closeActiveTurn();
     this._recordActivity({ type: 'match.abort', source: 'system', phase: 'complete', summary: `${color} aborted` });
     return this._completion();
@@ -202,6 +204,7 @@ export class MatchSession {
     const failureCode = FAILURE_CODES.has(code) ? code : 'MATCH_FAILURE';
     this.status = 'failed';
     this.termination = 'failure';
+    this.game.chess.header('Result', '*', 'Termination', this.termination);
     this._closeActiveTurn();
     this._recordActivity({
       type: 'match.fail', source: 'system', phase: 'failed', code: failureCode, summary: 'Match failed',
@@ -297,14 +300,16 @@ export class MatchSession {
   }
 
   exportRecord() {
+    const config = {
+      mode: this.mode, visibility: this.visibility,
+      seats: Object.fromEntries(Object.entries(this.seats).map(([color, seat]) => [color, publicSeat(seat)])),
+      clock: structuredClone(this.clock), steeringMode: this.steeringMode,
+      compatibility: structuredClone(this.compatibility),
+    };
+    if (Object.values(this.seats).some((seat) => seat.kind === 'engine')) config.engine = structuredClone(this.engine);
     return {
       id: this.id,
-      config: {
-        mode: this.mode, visibility: this.visibility,
-        seats: Object.fromEntries(Object.entries(this.seats).map(([color, seat]) => [color, publicSeat(seat)])),
-        clock: structuredClone(this.clock), steeringMode: this.steeringMode,
-        engine: structuredClone(this.engine), compatibility: structuredClone(this.compatibility),
-      },
+      config,
       status: this.status,
       termination: this.termination,
       result: this.resultOverride ?? this.game.result(),
@@ -332,6 +337,7 @@ export class MatchSession {
     if (!game.gameOver) return;
     this.status = 'completed';
     this.termination = game.checkmate ? 'checkmate' : game.draw ? 'draw' : 'game_over';
+    this.game.chess.header('Result', game.result, 'Termination', this.termination);
   }
 
   _completion() {

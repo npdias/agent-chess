@@ -126,6 +126,6 @@ export function displayedSeats(seats = {}, flipped = false) {
     : { top: display('black'), bottom: display('white') };
 }
 
-export function replayPlyForRow(index, hasBlackMove, totalPly) {
-  return Math.min(totalPly, index * 2 + (hasBlackMove ? 2 : 1));
+export function replayPlyForMove(index, color) {
+  return index * 2 + (color === 'black' ? 2 : 1);
 }

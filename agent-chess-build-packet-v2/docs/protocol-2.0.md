@@ -27,7 +27,7 @@ Legacy creation payloads without `seats` map to agent-versus-engine: `agentColor
 
 Generic public agent seats require `publicTrace`: structured `source`, `phase`, `summary`, up to three legal `candidates`, `selectedMove`. Disclosure `source` is exactly `agent_reported`, `provider_summary`, or `adapter_generated`; transport actor is recorded separately. `selectedMove` must match submitted `moveUci`; trace candidates must be legal. It becomes public activity/export only when `move.submit` accepts it. Service never receives caller credentials, prompts, secrets, private memory, local files, or private reasoning. `private_eval` requires `visibility: private`; it is move_only, `trace.publish` returns `TRACE_NOT_ALLOWED`, submitted `publicTrace` is suppressed.
 
-`GET /api/matches/MATCH_ID/export` returns config, status, termination, result, PGN, public activity, positions, engine config, protocol version. Public export needs no auth; private export requires human or agent capability. No persistence: restart clears every match.
+`GET /api/matches/MATCH_ID/export` returns config, status, termination, result, PGN, public activity, positions, protocol version. Engine-seat matches additionally include engine name, exact package version, deterministic skill/movetime profile ID, host build identifier; non-engine matches omit engine metadata. Terminal PGN sets matching `Result` plus `Termination` headers. Public export needs no auth; private export requires human or agent capability. No persistence: restart clears every match.
 
 ## Server-to-agent messages
 

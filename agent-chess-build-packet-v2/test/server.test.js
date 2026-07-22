@@ -156,6 +156,33 @@ test('generic creation keeps capabilities out of public snapshots and export', a
   }
 });
 
+test('exports reproducibility metadata only for engine seats', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const engineMatch = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public', engine: { skillLevel: 7, movetimeMs: 90 },
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'engine', name: 'Engine' } },
+    });
+    const engineExport = await fetch(`${address.httpUrl}/api/matches/${engineMatch.matchId}/export`).then((response) => response.json());
+    assert.deepEqual(engineExport.engine, {
+      name: 'Stockfish 18 Lite', package: 'stockfish@18.0.8', profileId: 'stockfish-skill-7-movetime-90',
+      skillLevel: 7, movetimeMs: 90, hostBuild: 'agent-chess-mvp@0.1.0',
+    });
+
+    const agentMatch = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const agentSnapshot = await getMatch(address, agentMatch.matchId);
+    const agentExport = await fetch(`${address.httpUrl}/api/matches/${agentMatch.matchId}/export`).then((response) => response.json());
+    assert.equal('engine' in agentSnapshot, false);
+    assert.equal('engine' in agentExport, false);
+  } finally {
+    await server.stop();
+  }
+});
+
 test('private snapshots require a bound seat capability and private event observers are denied', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);

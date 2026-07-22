@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import packageJson from '../package.json' with { type: 'json' };
 import { WebSocketServer, WebSocket } from 'ws';
 import { MatchSession } from './match.js';
 import { StockfishEngine } from './stockfish.js';
@@ -80,11 +81,14 @@ function publicSnapshot(record) {
       mode: turn.mode,
     },
     connected: [...record.agentSockets.values()].some((socket) => socket?.readyState === WebSocket.OPEN),
-    engine: {
+    ...(record.hasEngine ? { engine: {
       name: 'Stockfish 18 Lite',
+      package: `stockfish@${packageJson.dependencies.stockfish}`,
+      profileId: `stockfish-skill-${record.skillLevel}-movetime-${record.movetimeMs}`,
       skillLevel: record.skillLevel,
       movetimeMs: record.movetimeMs,
-    },
+      hostBuild: process.env.AGENT_CHESS_BUILD_ID ?? `${packageJson.name}@${packageJson.version}`,
+    } } : {}),
   };
 }
 
@@ -367,6 +371,7 @@ export function createAgentChessServer({
       const record = {
         session,
         engine,
+        hasEngine,
         engineConfig,
         skillLevel: engineConfig.skillLevel,
         movetimeMs: engineConfig.movetimeMs,
@@ -439,7 +444,7 @@ export function createAgentChessServer({
       }
       sendJson(response, 200, {
         ...record.session.exportRecord(),
-        engine: { name: 'Stockfish 18 Lite', skillLevel: record.skillLevel, movetimeMs: record.movetimeMs },
+        ...(record.hasEngine ? { engine: publicSnapshot(record).engine } : {}),
         protocolVersion: '2.0',
       });
       return true;

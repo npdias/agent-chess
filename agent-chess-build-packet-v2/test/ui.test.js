@@ -52,6 +52,12 @@ test('groups SAN history into numbered move rows', () => {
   ]);
 });
 
+test('binds replay selection to individual native SAN buttons', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(app, /button\.addEventListener\('click', \(\) => \{ replayPly = replayPlyForMove\(index, color\)/);
+  assert.doesNotMatch(app, /row\.addEventListener\('click'/);
+});
+
 test('derives verified turn phase or truthful waiting fallback', () => {
   assert.equal(deriveTurnPhase({ activity: [{ phase: 'probe' }] }).key, 'probe');
   assert.equal(deriveTurnPhase({ activity: [] }).label, 'Waiting for turn');
