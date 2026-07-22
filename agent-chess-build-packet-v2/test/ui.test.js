@@ -191,3 +191,28 @@ test('locks chess squares to eight equal grid rows without intrinsic piece overf
   assert.match(css, /\.square\s*\{[^}]*min-width:\s*0[^}]*min-height:\s*0/);
   assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.piece\s*\{[^}]*font-size:\s*min\(5rem,\s*calc\(var\(--live-board-size\)\s*\/\s*10\)\)/);
 });
+
+test('defines generic unrated human exhibition controls without capability leakage', async () => {
+  const [html, app, css] = await Promise.all([
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+
+  assert.match(html, /name="opponentKind"/);
+  assert.match(html, /name="humanColor"/);
+  assert.match(html, /Unrated exhibition/);
+  assert.match(html, /id="promotion-dialog"/);
+  assert.match(html, /id="share-match"/);
+  assert.match(html, /id="return-live"/);
+  assert.match(html, /id="focus-mode"/);
+  assert.match(html, /id="lifecycle-action"/);
+  assert.doesNotMatch(html, /id="seat-token"/);
+  assert.match(app, /sessionStorage\.setItem/);
+  assert.match(app, /human-moves/);
+  assert.match(app, /legal-target/);
+  assert.match(app, /legal-capture/);
+  assert.match(app, /document\.createElement\('button'\)/);
+  assert.match(css, /\.board\s*\{[^}]*grid-template-columns:\s*repeat\(8/);
+  assert.match(css, /\.board\s*\{[^}]*grid-template-rows:\s*repeat\(8/);
+});

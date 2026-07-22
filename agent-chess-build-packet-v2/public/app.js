@@ -1,3 +1,5 @@
+import { canHumanMove, selectHumanSquare, buildHumanMove } from './board-interaction.js';
+
 const PIECES = {
   K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
   k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟',
@@ -31,6 +33,12 @@ export function groupMoves(movesSan = []) {
     rows.push({ number: Math.floor(i / 2) + 1, white: movesSan[i] ?? '', black: movesSan[i + 1] ?? '' });
   }
   return rows;
+}
+
+export function capturedMaterial(initialFen, currentFen) {
+  const pieces = 'qrbnp';
+  const count = (fen, piece) => fenToBoard(fen).filter((token) => token === piece).length;
+  return pieces.map((piece) => Math.max(0, count(initialFen, piece) - count(currentFen, piece)) * ({ q: 9, r: 5, b: 3, n: 3, p: 1 }[piece])).reduce((sum, value) => sum + value, 0);
 }
 
 const TURN_PHASES = [
@@ -175,6 +183,11 @@ let boardFlipped = false;
 let currentMatch = null;
 let eventSocket;
 let toastTimer;
+let humanCapability = null;
+let humanColor = null;
+let selection = { selected: null, legalTargets: [], legalMoves: [] };
+let replayPly = null;
+let pendingMove = false;
 
 function toast(message) {
   const node = qs('toast');
@@ -191,7 +204,8 @@ async function copyText(text, success = 'Copied') {
 
 function renderBoard(match) {
   const board = qs('board');
-  const pieces = fenToBoard(match.game.fen);
+  const displayFen = replayPly === null ? match.game.fen : (match.game.positions?.[replayPly] ?? match.game.fen);
+  const pieces = fenToBoard(displayFen);
   const lastMove = match.game.movesUci.at(-1) ?? '';
   const from = lastMove.slice(0, 2);
   const to = lastMove.slice(2, 4);
@@ -206,10 +220,18 @@ function renderBoard(match) {
     const col = index % 8;
     const visualRow = boardFlipped ? 7 - row : row;
     const visualCol = boardFlipped ? 7 - col : col;
-    const square = document.createElement('div');
+    const square = document.createElement('button');
+    square.type = 'button';
+    square.setAttribute('aria-label', `${name}${piece ? ` ${piece}` : ''}`);
     square.className = `square ${(row + col) % 2 ? 'dark' : 'light'}`;
     square.dataset.square = name;
     if (name === from || name === to) square.classList.add('last-move');
+    if (selection.selected === name) square.classList.add('selected');
+    if (selection.legalTargets.includes(name)) square.classList.add(piece ? 'legal-capture' : 'legal-target');
+    if (match.game.inCheck && piece?.toLowerCase() === 'k' && (piece === piece.toUpperCase()) === (match.game.turn === 'white')) square.classList.add('in-check');
+    if (pendingMove) square.classList.add('submission-pending');
+    square.disabled = !canHumanMove(match, humanColor) || replayPly !== null || pendingMove;
+    square.addEventListener('click', () => handleSquare(name));
     if (piece) {
       const token = document.createElement('span');
       token.className = `piece ${piece === piece.toUpperCase() ? 'white-piece' : 'black-piece'}`;
@@ -244,6 +266,8 @@ function renderMoves(match) {
   rows.forEach((move, index) => {
     const row = document.createElement('div');
     row.className = `move-row ${index === rows.length - 1 ? 'current' : ''}`;
+    row.tabIndex = 0;
+    row.addEventListener('click', () => { replayPly = Math.min(match.game.movesSan.length, index * 2 + (move.black ? 2 : 1)); qs('return-live').hidden = false; renderBoard(match); });
     row.innerHTML = `<span>${move.number}.</span><strong>${move.white}</strong><strong>${move.black}</strong>`;
     list.append(row);
   });
@@ -294,22 +318,25 @@ function render(match) {
   const summary = deriveMatchSummary(match);
   qs('empty-state').hidden = true;
   qs('match-view').hidden = false;
-  qs('connection').textContent = match.connected ? 'Agent connected' : 'Waiting for agent';
+  const seats = match.seats ?? {};
+  const humanSeat = Object.entries(seats).find(([, seat]) => seat.kind === 'human');
+  if (!humanColor && humanSeat) { humanColor = humanSeat[0]; boardFlipped = humanColor === 'black'; }
+  qs('connection').textContent = 'Unrated exhibition';
   qs('connection').dataset.connected = String(match.connected);
   qs('connection-small').textContent = match.connected ? 'Connected' : 'Disconnected';
-  qs('engine').textContent = `${match.engine.name} · Skill ${match.engine.skillLevel}`;
+  qs('engine').textContent = 'Unrated exhibition';
   qs('engine-inline').textContent = `Skill ${match.engine.skillLevel} · ${match.engine.movetimeMs} ms/move`;
-  qs('mode').textContent = match.steeringMode === 'trainer' ? 'Trainer steering' : 'Locked benchmark';
-  qs('match-title').textContent = match.game.gameOver ? summary.status : `${match.agentColor === 'white' ? 'Agent' : 'Stockfish'} vs ${match.agentColor === 'white' ? 'Stockfish' : 'Agent'}`;
-  qs('turn-label').textContent = match.game.gameOver ? match.game.result : `${match.game.turn === match.agentColor ? 'Your agent' : 'Stockfish'} to move`;
-  qs('engine-state').textContent = match.game.gameOver ? 'Finished' : match.game.turn === match.agentColor ? 'Waiting' : 'Thinking';
-  qs('agent-color').textContent = `Playing ${match.agentColor}`;
-  qs('agent-name').textContent = match.agentName ?? 'Connected agent';
-  qs('opponent-name').textContent = match.opponentName ?? 'Stockfish';
+  qs('match-title').textContent = match.game.gameOver ? summary.status : `${seats.white?.name ?? 'White'} vs ${seats.black?.name ?? 'Black'}`;
+  qs('turn-label').textContent = match.game.gameOver ? match.game.result : `${seats[match.game.turn]?.name ?? match.game.turn} to move`;
+  qs('engine-state').textContent = match.game.gameOver ? 'Finished' : 'No clock';
+  qs('agent-color').textContent = seats.white?.kind ?? '';
+  qs('agent-name').textContent = seats.white?.name ?? 'White';
+  qs('opponent-name').textContent = seats.black?.name ?? 'Black';
   qs('fen').textContent = match.game.fen;
-  qs('steering-form').hidden = match.steeringMode !== 'trainer';
-  qs('steering-locked').hidden = match.steeringMode === 'trainer';
-  qs('steering-state').textContent = match.steeringMode === 'trainer' ? 'Unlocked' : 'Locked';
+  qs('material').textContent = `Captured material: ${capturedMaterial(match.game.positions?.[0] ?? match.game.fen, match.game.fen)}`;
+  qs('steering-form').hidden = true;
+  qs('steering-locked').hidden = false;
+  qs('steering-state').textContent = 'No clock';
   qs('status-title').textContent = summary.status;
   qs('summary-result').textContent = summary.resultLabel;
   qs('summary-moves').textContent = String(summary.moveCount);
@@ -320,6 +347,8 @@ function render(match) {
   renderMoves(match);
   renderTrace(match);
   renderReview(match, summary);
+  qs('connector').hidden = !Object.values(seats).some((seat) => seat.kind === 'agent') || !sessionStorage.getItem(`${match.id}:agent`);
+  qs('lifecycle-action').textContent = (match.game.movesSan?.length ?? 0) ? 'Resign' : 'Abort';
 }
 
 async function createMatch(event) {
@@ -328,22 +357,18 @@ async function createMatch(event) {
   const response = await fetch('/api/matches', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      agentName: form.get('agentName'),
-      agentColor: form.get('agentColor'),
-      steeringMode: form.get('steeringMode'),
-      skillLevel: Number(form.get('skillLevel')),
-      movetimeMs: 150,
-    }),
+    body: JSON.stringify({ human: { kind: 'human', name: 'Human' }, opponent: { kind: form.get('opponentKind'), name: form.get('opponentKind') === 'engine' ? 'Computer' : 'My agent' }, color: form.get('humanColor'), skillLevel: Number(form.get('skillLevel')), movetimeMs: 150 }),
   });
   if (!response.ok) throw new Error(await response.text());
   const created = await response.json();
   const url = new URL(location.href);
   url.searchParams.set('match', created.matchId);
   history.replaceState(null, '', url);
-  qs('seat-token').textContent = created.seatToken;
-  qs('connect-command').textContent = `npm run connect -- --server ${location.origin} --seat ${created.seatToken} --command ./your-agent`;
-  qs('connector').hidden = false;
+  humanCapability = created.capabilities.human;
+  humanColor = form.get('humanColor') === 'random' ? null : form.get('humanColor');
+  if (humanColor) boardFlipped = humanColor === 'black';
+  sessionStorage.setItem(`${created.matchId}:human`, humanCapability);
+  if (created.capabilities.agent) sessionStorage.setItem(`${created.matchId}:agent`, created.capabilities.agent);
   await loadMatch(created.matchId);
 }
 
@@ -354,6 +379,7 @@ async function loadMatch(matchId) {
     qs('match-view').hidden = true;
     return;
   }
+  humanCapability = sessionStorage.getItem(`${matchId}:human`);
   render(await response.json());
   eventSocket?.close();
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -362,6 +388,34 @@ async function loadMatch(matchId) {
     const message = JSON.parse(event.data);
     if (message.type === 'match.state') render(message.match);
   });
+}
+
+async function handleSquare(square) {
+  if (!currentMatch || !humanCapability) return;
+  if (selection.selected && selection.legalTargets.includes(square)) {
+    const result = buildHumanMove(selection, square);
+    if (result?.promotionRequired) return choosePromotion(square, result.promotionOptions);
+    if (result?.moveUci) return submitHumanMove(result.moveUci);
+  }
+  selection = selectHumanSquare(selection, square, currentMatch, humanColor);
+  renderBoard(currentMatch);
+}
+
+function choosePromotion(destination, options) {
+  const dialog = qs('promotion-dialog');
+  dialog.showModal();
+  dialog.addEventListener('close', () => {
+    const result = buildHumanMove(selection, destination, dialog.returnValue);
+    if (options.includes(dialog.returnValue) && result?.moveUci) submitHumanMove(result.moveUci);
+  }, { once: true });
+}
+
+async function submitHumanMove(moveUci) {
+  pendingMove = true; renderBoard(currentMatch);
+  const response = await fetch(`/api/matches/${encodeURIComponent(currentMatch.id)}/human-moves`, { method: 'POST', headers: { authorization: `Bearer ${humanCapability}`, 'content-type': 'application/json' }, body: JSON.stringify({ turnId: currentMatch.activeTurn.turnId, moveUci }) });
+  pendingMove = false; selection = { selected: null, legalTargets: [], legalMoves: [] };
+  if (response.status !== 202) { toast('Move rejected'); await loadMatch(currentMatch.id); return; }
+  await loadMatch(currentMatch.id);
 }
 
 async function sendSteering(event) {
@@ -394,8 +448,34 @@ function boot() {
   qs('skill-level').addEventListener('input', (event) => { qs('skill-output').value = event.target.value; });
   qs('new-match-button').addEventListener('click', () => { location.href = '/'; });
   qs('flip-board').addEventListener('click', () => { boardFlipped = !boardFlipped; if (currentMatch) renderBoard(currentMatch); });
-  qs('copy-command').addEventListener('click', () => copyText(qs('connect-command').textContent, 'Connector command copied'));
+  qs('copy-command').addEventListener('click', async () => {
+    const agentCapability = currentMatch && sessionStorage.getItem(`${currentMatch.id}:agent`);
+    if (!agentCapability) return;
+    const response = await fetch('/api/agent-sessions', { method: 'POST', headers: { authorization: `Bearer ${agentCapability}` } });
+    if (!response.ok) return toast('Connector unavailable');
+    const session = await response.json();
+    qs('connect-command').textContent = `npm run connect -- --server ${location.origin} --path ${session.wsPath} --command ./your-agent`;
+    copyText(qs('connect-command').textContent, 'Connector command copied');
+  });
   qs('copy-pgn').addEventListener('click', () => currentMatch?.pgn && copyText(currentMatch.pgn, 'PGN copied'));
+  qs('share-match').addEventListener('click', () => currentMatch && copyText(`${location.origin}/?match=${encodeURIComponent(currentMatch.id)}`, 'Spectator link copied'));
+  qs('focus-mode').addEventListener('click', (event) => { document.documentElement.classList.toggle('focus-mode'); event.currentTarget.setAttribute('aria-pressed', String(document.documentElement.classList.contains('focus-mode'))); });
+  qs('return-live').addEventListener('click', () => { replayPly = null; qs('return-live').hidden = true; if (currentMatch) renderBoard(currentMatch); });
+  qs('lifecycle-action').addEventListener('click', async () => {
+    if (!currentMatch || !humanCapability) return;
+    const action = qs('lifecycle-action').textContent.toLowerCase();
+    if (!confirm(`${action[0].toUpperCase()}${action.slice(1)} this match?`)) return;
+    const response = await fetch(`/api/matches/${encodeURIComponent(currentMatch.id)}/${action}`, { method: 'POST', headers: { authorization: `Bearer ${humanCapability}` } });
+    if (!response.ok) return toast(`${action} rejected`);
+    await loadMatch(currentMatch.id);
+  });
+  qs('download-match').addEventListener('click', async () => {
+    if (!currentMatch) return;
+    const response = await fetch(`/api/matches/${encodeURIComponent(currentMatch.id)}/export`, { headers: humanCapability ? { authorization: `Bearer ${humanCapability}` } : {} });
+    if (!response.ok) return toast('Download unavailable');
+    const url = URL.createObjectURL(new Blob([await response.text()], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = `${currentMatch.id}.json`; link.click(); URL.revokeObjectURL(url);
+  });
   document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => selectTab(tab.dataset.tab)));
   const matchId = new URL(location.href).searchParams.get('match');
   if (matchId) loadMatch(matchId);

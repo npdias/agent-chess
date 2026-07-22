@@ -23,19 +23,18 @@
   <main class="app-shell">
     <section id="empty-state" class="setup-shell">
       <div class="setup-copy">
-        <p class="eyebrow">Local-agent arena</p>
-        <h1>Put an agent across the board from Stockfish.</h1>
-        <p>Agent inference and credentials remain local. This service owns the board, validates every move, runs Stockfish, and records the match.</p>
+        <p class="eyebrow">Exhibition board</p>
+        <h1>Play a private human exhibition.</h1>
+        <p>This service owns board state, validates every move, runs computer opponents, and records the match.</p>
         <div class="feature-strip">
           <span>Legal move validation</span><span>Stored structured trace summaries</span><span>Optional trainer steering</span>
         </div>
       </div>
       <form id="create-match" class="setup-card">
-        <div class="form-heading"><div><p class="eyebrow">Create seat</p><h2>New match</h2></div><span class="pill">Prototype</span></div>
-        <label>Agent name<input name="agentName" value="My Agent" maxlength="80" autocomplete="off"></label>
+        <div class="form-heading"><div><p class="eyebrow">Create exhibition</p><h2>New match</h2></div><span class="pill">Unrated exhibition</span></div>
         <div class="field-row">
-          <label>Agent color<select name="agentColor"><option value="white">White</option><option value="black">Black</option></select></label>
-          <label>Steering<select name="steeringMode"><option value="locked">Locked</option><option value="trainer">Trainer enabled</option></select></label>
+          <label>Opponent<select name="opponentKind"><option value="engine">Computer</option><option value="agent">My agent</option></select></label>
+          <label>Play as<select name="humanColor"><option value="white">White</option><option value="black">Black</option><option value="random">Random</option></select></label>
         </div>
         <label class="range-label"><span>Stockfish skill <output id="skill-output">5</output></span><input id="skill-level" name="skillLevel" type="range" min="0" max="20" value="5"></label>
         <button class="primary-button" type="submit">Create match</button>
@@ -46,12 +45,12 @@
     <section id="match-view" class="match-layout" hidden>
       <section class="board-stage">
         <div class="match-context">
-          <div><p class="eyebrow" id="match-kind">Stockfish match</p><h1 id="match-title">Live match</h1></div>
-          <div class="context-actions"><span id="mode" class="pill"></span><button id="copy-pgn" class="ghost-button" type="button">Copy PGN</button></div>
+          <div><p class="eyebrow" id="match-kind">Unrated exhibition</p><h1 id="match-title">Live match</h1></div>
+          <div class="context-actions"><button id="focus-mode" class="ghost-button" type="button" aria-pressed="false">Focus</button><button id="share-match" class="ghost-button" type="button">Share</button><button id="copy-pgn" class="ghost-button" type="button">Copy PGN</button></div>
         </div>
 
-        <section class="phase-ribbon" aria-label="Agent turn phase">
-          <div class="phase-ribbon-heading"><span>Agent turn</span><strong id="phase-current" aria-live="polite">Waiting for turn</strong></div>
+        <section class="phase-ribbon" aria-label="Match phase">
+          <div class="phase-ribbon-heading"><span>Match phase</span><strong id="phase-current" aria-live="polite">Waiting for turn</strong></div>
           <ol id="phase-ribbon" class="phase-steps"></ol>
         </section>
 
@@ -68,8 +67,9 @@
         </div>
 
         <div class="board-footer">
-          <div class="position-line"><span>FEN</span><code id="fen"></code></div>
-          <button id="flip-board" class="text-button" type="button">Flip board</button>
+          <div class="position-line"><span>No clock</span><code id="fen"></code></div>
+          <output id="material" class="material" aria-label="Captured material"></output>
+          <button id="return-live" class="text-button" type="button" hidden>Return to live</button><button id="flip-board" class="text-button" type="button">Flip board</button>
         </div>
       </section>
 
@@ -77,7 +77,7 @@
         <section id="connector" class="connector-card" hidden>
           <div><p class="eyebrow">Agent seat ready</p><strong>Connect your local harness</strong></div>
           <code id="connect-command"></code>
-          <div class="connector-actions"><button id="copy-command" class="secondary-button" type="button">Copy command</button><small>Token <span id="seat-token"></span></small></div>
+          <div class="connector-actions"><button id="copy-command" class="secondary-button" type="button">Copy command</button><small>Capability remains in this browser.</small></div>
         </section>
 
         <section class="panel status-panel">
@@ -85,7 +85,7 @@
           <div class="summary-grid">
             <div><span>Result</span><strong id="summary-result">In progress</strong></div>
             <div><span>Moves</span><strong id="summary-moves">0</strong></div>
-            <div><span>Steering</span><strong id="summary-steering">Locked</strong></div>
+            <div><span>Time</span><strong id="summary-steering">No clock</strong></div>
             <div><span>Termination</span><strong id="summary-termination">—</strong></div>
           </div>
         </section>
@@ -123,11 +123,13 @@
           <div class="review-list" id="review-list"></div>
           <p class="analysis-note">Engine evaluation, inaccuracies, and Elo impact require the planned PGN analysis worker.</p>
         </section>
+        <section class="panel lifecycle-panel"><button id="lifecycle-action" class="secondary-button" type="button">Abort</button><button id="download-match" class="ghost-button" type="button">Download Match JSON</button></section>
       </aside>
     </section>
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <dialog id="promotion-dialog" aria-labelledby="promotion-title"><form method="dialog"><h2 id="promotion-title">Choose promotion</h2><div class="promotion-actions"><button value="q">Queen</button><button value="r">Rook</button><button value="b">Bishop</button><button value="n">Knight</button></div><button value="cancel" class="text-button">Cancel</button></form></dialog>
   <script type="module" src="/app.js"></script>
 </body>
 </html>
