@@ -104,7 +104,7 @@ test('operator docs name runnable smoke commands and privacy boundaries', async 
   assert.equal(JSON.parse(packageJson).scripts['smoke:human'], 'node bin/smoke-human.js');
   assert.equal(JSON.parse(packageJson).scripts.smoke, 'node bin/smoke-agent.js');
   assert.match(readme, /npm run smoke:human -- --server http:\/\/127\.0\.0\.1:3000 --color white --turns 3/);
-  assert.match(protocol, /\{ "ticket", "wsPath", "expiresAt" \}/);
+  assert.match(protocol, /\{ "ticket", "wsPath", "joinPath", "expiresAt" \}/);
   assert.match(protocol, /\{ "accepted": true, "moveUci", "moveSan" \}/);
   assert.match(protocol, /selectedMove.*match/i);
   assert.match(protocol, /resign.*after start/i);
