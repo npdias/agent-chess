@@ -55,8 +55,32 @@ test('lists unique legal destinations from authoritative public moves', () => {
   assert.deepEqual(legalMovesFrom(match, 'a1'), []);
 });
 
-test('blocks selection outside authenticated human turn', () => {
-  assert.equal(canHumanMove({ status: 'active', game: { turn: 'black' } }, 'white'), false);
+test('requires active match for human input', () => {
+  const match = initialHumanMatch('white');
+  match.status = 'waiting';
+
+  assert.equal(canHumanMove(match, 'white'), false);
+});
+
+test('requires human ownership for human input', () => {
+  const match = initialHumanMatch('white');
+  match.seats.white.kind = 'agent';
+
+  assert.equal(canHumanMove(match, 'white'), false);
+});
+
+test('requires authenticated human turn for human input', () => {
+  const match = initialHumanMatch('white');
+  match.game.turn = 'black';
+
+  assert.equal(canHumanMove(match, 'white'), false);
+});
+
+test('blocks human input after terminal game', () => {
+  const match = initialHumanMatch('white');
+  match.game.gameOver = true;
+
+  assert.equal(canHumanMove(match, 'white'), false);
 });
 
 test('blocks input when authenticated color does not own a human seat', () => {
@@ -94,6 +118,13 @@ test('switches owned source, cancels current source, and keeps keyboard focus im
   });
   assert.equal(state.selected, 'e2');
   assert.equal(match.game.legalMoves.length, 3);
+});
+
+test('keeps valid selection when input is neither selected source nor legal origin', () => {
+  const match = initialHumanMatch('white');
+  const selected = selectHumanSquare({ selected: null }, 'e2', match, 'white');
+
+  assert.deepEqual(selectHumanSquare(selected, 'd8', match, 'white'), selected);
 });
 
 test('resets stale selection when match turn changes', () => {

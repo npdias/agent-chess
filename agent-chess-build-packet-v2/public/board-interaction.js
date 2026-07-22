@@ -39,8 +39,10 @@ export function selectHumanSquare(state, square, match, color) {
 
   const stateIsCurrent = state?.positionKey === undefined || state.positionKey === positionKey(match);
   const moves = movesFrom(match, square);
-  if (!stateIsCurrent || moves.length === 0) return emptyState(square, match);
+  if (!stateIsCurrent) return emptyState(square, match);
   if (state?.selected === square) return emptyState(square, match);
+  if (moves.length === 0 && state?.selected) return state;
+  if (moves.length === 0) return emptyState(square, match);
 
   return {
     selected: square,
