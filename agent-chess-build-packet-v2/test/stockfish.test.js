@@ -15,3 +15,17 @@ test('returns a legal best move for a FEN position', { timeout: 20_000 }, async 
     engine.close();
   }
 });
+
+test('starts a fresh engine after a prior match closes', { timeout: 20_000 }, async () => {
+  const chess = new Chess();
+  const legal = new Set(chess.moves({ verbose: true }).map((move) => move.lan));
+
+  for (let index = 0; index < 2; index += 1) {
+    const engine = await StockfishEngine.start({ movetimeMs: 50, skillLevel: 2 });
+    try {
+      assert.ok(legal.has(await engine.bestMove(chess.fen())));
+    } finally {
+      engine.close();
+    }
+  }
+});

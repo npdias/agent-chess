@@ -30,6 +30,7 @@ export class StockfishEngine {
   }
 
   static async start(options = {}) {
+    delete require.cache[require.resolve('stockfish/bin/stockfish-18-lite-single.js')];
     const engine = await initStockfish('lite-single');
     engine.__listeners = new Set();
     engine.listener = (line) => {
