@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { AgentChessGame } from '../src/game.js';
 import { MatchSession } from '../src/match.js';
 
 const publicHumanEngineConfig = {
@@ -72,6 +73,55 @@ test('aborts only before first move', () => {
   const turn = started.createTurnPayload();
   started.submitSeatMove({ color: 'white', turnId: turn.turnId, moveUci: 'e2e4' });
   assert.throws(() => started.abort('black'), /ABORT_NOT_ALLOWED/);
+});
+
+test('checkmate move completes lifecycle and later controls retain completion', () => {
+  const match = new MatchSession(publicHumanEngineConfig);
+  for (const [color, moveUci] of [
+    ['white', 'f2f3'], ['black', 'e7e5'], ['white', 'g2g4'], ['black', 'd8h4'],
+  ]) {
+    const turn = match.createTurnPayload();
+    match.submitSeatMove({ color, turnId: turn.turnId, moveUci });
+  }
+
+  assert.deepEqual(match.snapshot().game.result, '0-1');
+  assert.equal(match.snapshot().status, 'completed');
+  assert.equal(match.snapshot().termination, 'checkmate');
+  assert.equal(match.activeTurn(), null);
+  assert.deepEqual(match.abort('white'), {
+    status: 'completed', termination: 'checkmate', result: '0-1',
+  });
+  assert.equal(match.snapshot().status, 'completed');
+});
+
+test('draw move completes lifecycle', () => {
+  const match = new MatchSession(publicHumanEngineConfig);
+  match.game = new AgentChessGame({ fen: '4k3/8/8/8/8/8/3n4/2B1K3 w - - 0 1' });
+
+  const turn = match.createTurnPayload();
+  match.submitSeatMove({ color: 'white', turnId: turn.turnId, moveUci: 'c1d2' });
+
+  assert.equal(match.snapshot().game.result, '1/2-1/2');
+  assert.equal(match.snapshot().status, 'completed');
+  assert.equal(match.snapshot().termination, 'draw');
+  assert.equal(match.activeTurn(), null);
+});
+
+test('failure activity exposes fixed summary and validated code without caller message', () => {
+  const match = new MatchSession(publicHumanEngineConfig);
+  const secret = 'sk-live-secret private prompt /Users/nicholasdias/private-reasoning';
+
+  match.fail('ENGINE_FAILURE', secret);
+
+  const snapshot = match.snapshot();
+  const record = match.exportRecord();
+  assert.deepEqual(snapshot.activity.at(-1), {
+    type: 'match.fail', source: 'system', kind: null, phase: 'failed',
+    at: snapshot.activity.at(-1).at, turnId: null, summary: 'Match failed',
+    candidates: [], selectedMove: null, code: 'ENGINE_FAILURE',
+  });
+  assert.equal(JSON.stringify(snapshot).includes(secret), false);
+  assert.equal(JSON.stringify(record).includes(secret), false);
 });
 
 test('public snapshot exposes generic seats without controller state', () => {

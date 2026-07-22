@@ -3,6 +3,7 @@ import { AgentChessGame } from './game.js';
 import { normalizeMatchConfig, publicSeat } from './seats.js';
 
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
+const FAILURE_CODES = new Set(['AGENT_FAILURE', 'ENGINE_FAILURE', 'MATCH_FAILURE', 'SYSTEM_FAILURE']);
 
 export class MatchSession {
   constructor(input = {}) {
@@ -158,6 +159,7 @@ export class MatchSession {
       type: 'move.submit', source: 'system', phase: 'submit', turnId,
       summary: `Submitted ${applied.uci}`, selectedMove: applied.uci,
     });
+    this._completeGameIfOver();
     return applied;
   }
 
@@ -185,10 +187,13 @@ export class MatchSession {
 
   fail(code, message) {
     if (this.isTerminal()) return this._completion();
+    const failureCode = FAILURE_CODES.has(code) ? code : 'MATCH_FAILURE';
     this.status = 'failed';
     this.termination = 'failure';
     this._closeActiveTurn();
-    this._recordActivity({ type: 'match.fail', source: 'system', phase: 'failed', summary: `${code}: ${message}` });
+    this._recordActivity({
+      type: 'match.fail', source: 'system', phase: 'failed', code: failureCode, summary: 'Match failed',
+    });
     return this._completion();
   }
 
@@ -310,6 +315,13 @@ export class MatchSession {
     this.currentTurnPayload = null;
   }
 
+  _completeGameIfOver() {
+    const game = this.game.snapshot();
+    if (!game.gameOver) return;
+    this.status = 'completed';
+    this.termination = game.checkmate ? 'checkmate' : game.draw ? 'draw' : 'game_over';
+  }
+
   _completion() {
     return {
       status: this.status,
@@ -329,7 +341,7 @@ export class MatchSession {
     }
   }
 
-  _recordActivity({ type, source, kind = null, phase, turnId = null, summary = '', candidates, selectedMove = null }) {
+  _recordActivity({ type, source, kind = null, phase, turnId = null, summary = '', candidates, selectedMove = null, code = null }) {
     const entry = {
       type,
       source,
@@ -345,6 +357,7 @@ export class MatchSession {
         }))
         : [],
       selectedMove: selectedMove ? String(selectedMove).trim() : null,
+      ...(code ? { code } : {}),
     };
     this.activity.push(entry);
     return entry;
