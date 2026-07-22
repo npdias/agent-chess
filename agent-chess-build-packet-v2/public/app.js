@@ -107,6 +107,30 @@ export function formatActivity(entry = {}) {
   };
 }
 
+export function buildAgentInviteUrl(origin, joinPath) {
+  return new URL(joinPath, origin).toString();
+}
+
+export function selectDecisionBrief(match = {}) {
+  const decision = [...(match.activity ?? [])].reverse().find((entry) => (
+    entry?.type === 'agent.decision'
+    && entry?.actor === 'agent'
+    && DISCLOSURE_LABELS[entry?.source]
+  ));
+  if (decision) return {
+    state: 'decision',
+    intent: decision.summary?.trim() || 'Agent published a structured decision.',
+    candidates: Array.isArray(decision.candidates) ? decision.candidates.slice(0, 4).map(({ uci, note }) => ({ uci, note })) : [],
+    selectedMove: decision.selectedMove ?? '',
+    disclosure: DISCLOSURE_LABELS[decision.source],
+  };
+  if (match.status === 'failed') return { state: 'failed', intent: 'Match failed before an agent decision was published.', candidates: [], selectedMove: '', disclosure: 'System status' };
+  const phase = deriveTurnPhase(match);
+  const phaseCopy = { observe: 'observing', probe: 'probing', evaluate: 'evaluating', choose: 'choosing', submit: 'submitting' };
+  if (phase.key !== 'waiting' && phase.key !== 'complete') return { state: 'working', intent: `Agent is ${phaseCopy[phase.key] ?? 'working on'} current position.`, candidates: [], selectedMove: '', disclosure: 'Phase status' };
+  return { state: 'empty', intent: 'No public agent decision yet.', candidates: [], selectedMove: '', disclosure: 'No disclosure' };
+}
+
 export function selectActivityEntries(match = {}) {
   const seen = new Set();
   const activity = match.activity ?? [];
@@ -310,17 +334,27 @@ function renderTrace(match) {
   for (const item of activity) trace.append(buildActivityEntry(document, item));
 }
 
-function renderPhaseRibbon(match) {
+function renderDecisionBrief(match) {
+  const brief = selectDecisionBrief(match);
+  qs('decision-intent').textContent = brief.intent;
+  qs('decision-disclosure').textContent = brief.disclosure;
+  const candidates = qs('decision-candidates');
+  candidates.replaceChildren();
+  brief.candidates.forEach((candidate) => {
+    const row = document.createElement('div');
+    const move = document.createElement('code'); move.textContent = candidate.uci;
+    row.append(move);
+    if (candidate.note) { const note = document.createElement('span'); note.textContent = candidate.note; row.append(note); }
+    candidates.append(row);
+  });
+  const selected = qs('decision-selected');
+  selected.hidden = !brief.selectedMove;
+  selected.textContent = brief.selectedMove ? `Selected move: ${brief.selectedMove}` : '';
+}
+
+function renderStatusLine(match) {
   const current = deriveTurnPhase(match);
-  const evidence = derivePhaseEvidence(match);
   qs('phase-current').textContent = current.label;
-  qs('phase-ribbon').replaceChildren(...TURN_PHASES.map((phase, index) => {
-    const item = document.createElement('li');
-    const complete = evidence.has(phase.key) && phase.key !== current.key;
-    item.className = complete ? 'complete' : phase.key === current.key ? 'current' : '';
-    item.innerHTML = `<span aria-hidden="true">${complete ? '✓' : index + 1}</span><strong>${phase.label}</strong>`;
-    return item;
-  }));
 }
 
 function renderReview(match, summary) {
@@ -367,16 +401,22 @@ function render(match) {
   qs('steering-locked').hidden = false;
   qs('steering-state').textContent = 'No clock';
   qs('status-title').textContent = summary.status;
-  qs('summary-result').textContent = summary.resultLabel;
-  qs('summary-moves').textContent = String(summary.moveCount);
-  qs('summary-steering').textContent = 'No clock';
-  qs('summary-termination').textContent = summary.termination;
-  renderPhaseRibbon(match);
+  renderStatusLine(match);
   renderBoard(match);
   renderMoves(match);
   renderTrace(match);
+  renderDecisionBrief(match);
   renderReview(match, summary);
-  qs('connector').hidden = !Object.entries(seats).some(([color, seat]) => seat.kind === 'agent' && sessionStorage.getItem(`${match.id}:capability:${color}`));
+  const ownsAgentSeat = Object.entries(seats).some(([color, seat]) => seat.kind === 'agent' && sessionStorage.getItem(`${match.id}:capability:${color}`));
+  const connector = qs('connector');
+  connector.hidden = !ownsAgentSeat;
+  connector.classList.toggle('connected', Boolean(match.connected));
+  qs('connector-title').textContent = match.connected ? 'Local agent connected' : 'Connect local agent';
+  qs('connector-steps').hidden = Boolean(match.connected);
+  qs('copy-agent-link').hidden = Boolean(match.connected);
+  qs('copy-command').hidden = Boolean(match.connected);
+  qs('connect-command').hidden = true;
+  qs('connector-feedback').textContent = match.connected ? 'Connection confirmed. Agent link no longer needed.' : 'Ticket remains private until copied.';
   qs('lifecycle-action').hidden = summary.review || !humanCapability;
   qs('lifecycle-action').textContent = (match.game.movesSan?.length ?? 0) ? 'Resign' : 'Abort';
 }
@@ -490,15 +530,27 @@ function boot() {
   });
   qs('new-match-button').addEventListener('click', () => { location.href = '/'; });
   qs('flip-board').addEventListener('click', () => { boardFlipped = !boardFlipped; if (currentMatch) { renderBoard(currentMatch); renderPlayerStrips(currentMatch); } });
-  qs('copy-command').addEventListener('click', async () => {
+  async function mintAgentSession() {
     const agentColor = currentMatch && Object.entries(currentMatch.seats).find(([, seat]) => seat.kind === 'agent')?.[0];
     const agentCapability = agentColor && sessionStorage.getItem(`${currentMatch.id}:capability:${agentColor}`);
-    if (!agentCapability) return;
+    if (!agentCapability) return null;
     const response = await fetch('/api/agent-sessions', { method: 'POST', headers: { authorization: `Bearer ${agentCapability}` } });
-    if (!response.ok) return toast('Connector unavailable');
-    const session = await response.json();
+    if (!response.ok) { toast('Connector unavailable'); return null; }
+    return response.json();
+  }
+  qs('copy-agent-link').addEventListener('click', async () => {
+    const session = await mintAgentSession();
+    if (!session) return;
+    await copyText(buildAgentInviteUrl(location.origin, session.joinPath), 'Agent link copied. Expires in 60 seconds.');
+    qs('connector-feedback').textContent = 'Agent link copied. Expires in 60 seconds.';
+  });
+  qs('copy-command').addEventListener('click', async () => {
+    const session = await mintAgentSession();
+    if (!session) return;
     qs('connect-command').textContent = `npm run --silent connect -- --server ${location.origin} --path ${shellQuote(session.wsPath)} --command ./your-agent`;
-    copyText(qs('connect-command').textContent, 'Connector command copied');
+    qs('connect-command').hidden = false;
+    await copyText(qs('connect-command').textContent, 'Connector command copied. Expires in 60 seconds.');
+    qs('connector-feedback').textContent = 'Terminal command copied. Expires in 60 seconds.';
   });
   qs('copy-pgn').addEventListener('click', () => currentMatch?.pgn && copyText(currentMatch.pgn, 'PGN copied'));
   qs('share-match').addEventListener('click', () => currentMatch && copyText(`${location.origin}/?match=${encodeURIComponent(currentMatch.id)}`, 'Spectator link copied'));

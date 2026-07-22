@@ -61,6 +61,10 @@ h1, h2, h3, p { margin-top: 0; }
 .match-context { width: min(100%, 820px); margin: 0 auto 4px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
 .match-context h1 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -.02em; }
 .context-actions { display: flex; align-items: center; gap: 6px; }
+.status-line { width: min(100%, 820px); margin: 10px auto 4px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); font-size: .76rem; }
+.status-line span:first-child { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: .66rem; }
+.status-line strong { margin-right: auto; }
+.status-line span:last-child { color: var(--accent-strong); }
 .phase-ribbon { width: min(100%, 820px); margin: 14px auto 4px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
 .phase-ribbon-heading { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
 .phase-ribbon-heading strong { color: var(--text); }
@@ -102,9 +106,23 @@ h1, h2, h3, p { margin-top: 0; }
 .position-line code { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #c3cac4; }
 .control-rail { display: grid; gap: 12px; align-content: start; padding-right: 2px; }
 .connector-card { padding: 14px; display: grid; gap: 10px; border-color: #47613d; background: #172016; }
+.connector-card.connected { border-color: var(--line); background: var(--surface); }
+.connector-steps { margin: 0; padding-left: 20px; color: var(--muted); font-size: .78rem; display: grid; gap: 4px; }
+.connector-feedback { margin: 0; color: var(--muted); font-size: .75rem; }
 .connector-card code { display: block; color: #cbe5ac; background: #0d120d; border: 1px solid #33452d; padding: 10px; border-radius: 5px; overflow-wrap: anywhere; font-size: .72rem; }
 .connector-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); }
 .connector-actions small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.connector-actions button { min-height: 38px; }
+.decision-panel { display: grid; gap: 9px; }
+.decision-intent { margin: 0; color: #c9d0ca; line-height: 1.45; }
+.decision-candidates { display: grid; gap: 5px; }
+.decision-candidates > div { display: flex; gap: 8px; align-items: baseline; padding: 7px 8px; border-radius: 5px; background: var(--surface-deep); color: var(--muted); font-size: .76rem; }
+.decision-candidates code, .decision-selected { color: var(--accent-strong); }
+.decision-selected { padding-top: 4px; border-top: 1px solid var(--line); font-size: .78rem; font-weight: 800; }
+.steering-details, .technical-activity { padding: 0; overflow: hidden; }
+.steering-details summary, .technical-activity summary { cursor: pointer; padding: 13px 15px; font-size: .8rem; font-weight: 850; text-transform: uppercase; letter-spacing: .07em; }
+.details-content, .technical-activity .trace { padding: 0 15px 15px; }
+.technical-activity .trace { max-height: 260px; }
 .panel { padding: 15px; }
 .status-panel { display: grid; gap: 14px; }
 .status-primary { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
@@ -170,12 +188,13 @@ dialog::backdrop { background: #0009; }
   .topbar { height: 48px; }
   .brand-mark { width: 28px; height: 28px; }
   .app-shell { padding: 8px 18px; }
-  .match-layout { --live-board-size: min(820px, calc(100dvh - 290px), calc(100vw - 492px)); grid-template-columns: var(--live-board-size) minmax(360px, 440px); gap: 16px; justify-content: center; }
+  .match-layout { --live-board-size: min(820px, calc(100dvh - 220px), calc(100vw - 492px)); grid-template-columns: var(--live-board-size) minmax(360px, 440px); gap: 16px; justify-content: center; }
   .board-stage { width: var(--live-board-size); }
   .match-context { min-height: 30px; margin-bottom: 0; }
   .match-context .eyebrow { margin-bottom: 1px; font-size: .62rem; }
   .match-context h1 { font-size: 1.25rem; line-height: 1.05; }
-  .phase-ribbon, .player-strip, .board-footer { width: 100%; }
+  .status-line, .phase-ribbon, .player-strip, .board-footer { width: 100%; }
+  .status-line { margin: 3px auto 1px; padding: 5px 8px; }
   .phase-ribbon { margin: 5px auto 1px; padding: 6px 9px; }
   .phase-steps { margin-top: 5px; }
   .player-strip { min-height: 44px; padding: 3px 0; }
@@ -187,20 +206,17 @@ dialog::backdrop { background: #0009; }
   .piece { font-size: min(5rem, calc(var(--live-board-size) / 10)); }
   .board-footer { margin-top: 3px; }
   .ghost-button, .text-button { padding-block: 5px; }
-  .control-rail { height: calc(var(--live-board-size) + 210px); max-height: none; display: flex; flex-direction: column; overflow-y: auto; padding-bottom: 2px; }
+  .control-rail { height: calc(var(--live-board-size) + 150px); max-height: none; display: flex; flex-direction: column; overflow-y: auto; padding-bottom: 2px; }
   .connector-card, .panel { padding: 11px; }
   .control-rail { gap: 8px; }
   .status-panel { gap: 9px; }
   .summary-grid > div { padding: 7px; }
-  .activity-panel { flex: 1 1 0; min-height: 160px; display: flex; flex-direction: column; }
-  .activity-panel .trace { flex: 1 1 auto; min-height: 0; max-height: none; }
-  .tab-panel { min-height: 0; }
+  .technical-activity { flex: 1 1 0; min-height: 80px; }
 }
 @media (max-width: 1020px) {
   .match-layout { grid-template-columns: minmax(0, 1fr); }
-  .control-rail { max-height: none; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }
-  .activity-panel { order: -1; grid-column: 1 / -1; }
-  .tab-panel, .post-match { grid-column: 1 / -1; }
+  .control-rail { max-height: none; grid-template-columns: minmax(0, 1fr); overflow: visible; }
+  .post-match { grid-column: 1 / -1; }
 }
 @media (max-width: 720px) {
   .topbar { grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding: 0 14px; }
@@ -228,6 +244,8 @@ dialog::backdrop { background: #0009; }
   .avatar { flex: 0 0 42px; }
   .clock { min-width: 0; padding: 8px 7px; font-size: .78rem; }
   .piece { font-size: clamp(1.8rem, 11vw, 4rem); }
+  .connector-actions { display: grid; grid-template-columns: 1fr; }
+  .connector-actions button { width: 100%; min-height: 44px; }
   .field-row { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {

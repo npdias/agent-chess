@@ -50,10 +50,7 @@
           <div class="context-actions"><button id="focus-mode" class="ghost-button" type="button" aria-pressed="false">Focus</button><button id="share-match" class="ghost-button" type="button">Share</button><button id="copy-pgn" class="ghost-button" type="button">Copy PGN</button></div>
         </div>
 
-        <section class="phase-ribbon" aria-label="Match phase">
-          <div class="phase-ribbon-heading"><span>Match phase</span><strong id="phase-current" aria-live="polite">Waiting for turn</strong></div>
-          <ol id="phase-ribbon" class="phase-steps"></ol>
-        </section>
+        <section id="status-line" class="status-line" aria-label="Match status"><span id="status-kicker">Match status</span><strong id="status-title">Waiting for agent</strong><span id="phase-current" aria-live="polite">Waiting for turn</span></section>
 
         <div class="player-strip opponent">
           <div class="player-identity"><span id="top-avatar" class="avatar">—</span><div><strong id="top-name">Black</strong><small id="top-color">Black</small></div></div>
@@ -76,33 +73,28 @@
 
       <aside class="control-rail">
         <section id="connector" class="connector-card" hidden>
-          <div><p class="eyebrow">Agent seat ready</p><strong>Connect your local harness</strong></div>
-          <code id="connect-command"></code>
-          <div class="connector-actions"><button id="copy-command" class="secondary-button" type="button">Copy command</button><small>Capability remains in this browser.</small></div>
+          <div><p class="eyebrow">Agent seat ready</p><strong id="connector-title">Connect local agent</strong></div>
+          <ol id="connector-steps" class="connector-steps"><li>Copy one-use agent link</li><li>Open link in local harness</li><li>Return here when connected</li></ol>
+          <p id="connector-feedback" class="connector-feedback">Ticket remains private until copied.</p>
+          <div class="connector-actions"><button id="copy-agent-link" class="primary-button" type="button">Copy agent link</button><button id="copy-command" class="secondary-button" type="button">Copy terminal command</button></div>
+          <code id="connect-command" hidden></code>
         </section>
 
-        <section class="panel status-panel">
-          <div class="status-primary"><span id="status-kicker">Match status</span><strong id="status-title">Waiting for agent</strong></div>
-          <div class="summary-grid">
-            <div><span>Result</span><strong id="summary-result">In progress</strong></div>
-            <div><span>Moves</span><strong id="summary-moves">0</strong></div>
-            <div><span>Time</span><strong id="summary-steering">No clock</strong></div>
-            <div><span>Termination</span><strong id="summary-termination">—</strong></div>
-          </div>
+        <section id="decision-brief" class="panel decision-panel" aria-labelledby="decision-title">
+          <div class="panel-title"><h2 id="decision-title">Agent decision</h2><span id="decision-disclosure">No disclosure</span></div>
+          <p id="decision-intent" class="decision-intent">No public agent decision yet.</p>
+          <div id="decision-candidates" class="decision-candidates"></div>
+          <div id="decision-selected" class="decision-selected" hidden></div>
         </section>
 
-        <section class="panel activity-panel" aria-labelledby="activity-title">
-          <div class="panel-title"><h2 id="activity-title">Live activity</h2><span class="live-label"><i></i>Visible</span></div>
-          <div id="activity" class="trace" aria-live="polite"></div>
+        <section class="panel moves-panel" aria-labelledby="moves-title">
+          <div class="panel-title"><h2 id="moves-title">Move history</h2><span>White / Black</span></div>
+          <div id="moves" class="moves"></div>
         </section>
 
-        <section class="panel tab-panel">
-          <div class="tabs" role="tablist">
-            <button class="tab" type="button" data-tab="steering">Steering</button>
-            <button class="tab active" type="button" data-tab="moves">Moves</button>
-          </div>
-
-          <div id="tab-steering" class="tab-content" role="tabpanel">
+        <details class="panel steering-details">
+          <summary>Steering</summary>
+          <div class="details-content">
             <div class="panel-title"><h2>Trainer channel</h2><span id="steering-state" class="pill"></span></div>
             <form id="steering-form" class="steering-form" hidden>
               <label for="steering-input">Guidance for the agent’s next turn</label>
@@ -111,12 +103,12 @@
             </form>
             <div id="steering-locked" class="locked-state"><strong>Steering is locked</strong><p>This match measures autonomous play. Mid-match coaching is disabled.</p></div>
           </div>
+        </details>
 
-          <div id="tab-moves" class="tab-content active" role="tabpanel">
-            <div class="panel-title"><h2>Move history</h2><span>White / Black</span></div>
-            <div id="moves" class="moves"></div>
-          </div>
-        </section>
+        <details class="panel technical-activity">
+          <summary>Technical activity</summary>
+          <div id="activity" class="trace" aria-live="polite"></div>
+        </details>
 
         <section id="post-match" class="panel post-match" hidden>
           <div class="panel-title"><h2>Match breakdown</h2><span>First-pass review</span></div>

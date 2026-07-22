@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildExhibitionPayload, materialPerspective } from '../public/app.js';
+import { buildExhibitionPayload, materialPerspective, buildAgentInviteUrl, selectDecisionBrief } from '../public/app.js';
 import { spawnSync } from 'node:child_process';
 import { fenToBoard, shellQuote, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
 
@@ -179,13 +179,14 @@ test('renders hostile public seat names as text in review rows', () => {
   assert.equal(nodes.at(-1).textContent, '<img src=x onerror=alert(1)>');
 });
 
-test('keeps phase ribbon and activity rail visible outside secondary tabs', async () => {
+test('keeps compact status and collapsible technical activity outside match controls', async () => {
   const [html, css] = await Promise.all([
     readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
     readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
   ]);
 
-  assert.match(html, /class="phase-ribbon"/);
+  assert.match(html, /id="status-line"/);
+  assert.match(html, /<details class="panel technical-activity"/);
   assert.match(html, /id="activity"/);
   assert.match(css, /\.board\s*\{[^}]*aspect-ratio:\s*1/);
   assert.match(css, /\.square\s*\{[^}]*aspect-ratio:\s*1/);
@@ -198,7 +199,7 @@ test('uses a desktop height-density rule to keep the square board in one viewpor
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
   assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.board\s*\{[^}]*width:\s*100%[^}]*aspect-ratio:\s*1/);
-  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.phase-ribbon,\s*\.player-strip,\s*\.board-footer\s*\{[^}]*width:\s*100%/);
+  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?\.status-line,\s*\.phase-ribbon,\s*\.player-strip,\s*\.board-footer\s*\{[^}]*width:\s*100%/);
 });
 
 test('allows the local connector command to shrink on narrow screens', async () => {
@@ -211,19 +212,19 @@ test('allows the local connector command to shrink on narrow screens', async () 
 test('centers a height-bound desktop board beside an equal-height activity rail', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*290px\),\s*calc\(100vw\s*-\s*492px\)\)/);
+  assert.match(css, /@media \(min-width: 1021px\)[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*220px\),\s*calc\(100vw\s*-\s*492px\)\)/);
   assert.match(css, /\.match-layout\s*\{[^}]*grid-template-columns:\s*var\(--live-board-size\)\s+minmax\(360px,\s*440px\)[^}]*justify-content:\s*center/);
   assert.match(css, /\.board-stage\s*\{[^}]*width:\s*var\(--live-board-size\)/);
-  assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*210px\)[^}]*overflow-y:\s*auto/);
-  assert.match(css, /\.activity-panel\s*\{[^}]*flex:\s*1\s+1\s+0/);
+  assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*150px\)[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.technical-activity\s*\{[^}]*flex:\s*1\s+1\s+0/);
 });
 
 test('caps the aligned desktop board and derives rail height from it at every desktop height', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-  assert.match(css, /@media \(min-width: 1021px\)\s*\{[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*290px\),\s*calc\(100vw\s*-\s*492px\)\)/);
+  assert.match(css, /@media \(min-width: 1021px\)\s*\{[\s\S]*?--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*220px\),\s*calc\(100vw\s*-\s*492px\)\)/);
   assert.doesNotMatch(css, /@media \(min-width: 1021px\) and \(max-height: 1250px\)/);
-  assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*210px\)/);
+  assert.match(css, /\.control-rail\s*\{[^}]*height:\s*calc\(var\(--live-board-size\)\s*\+\s*150px\)/);
 });
 
 test('locks chess squares to eight equal grid rows without intrinsic piece overflow', async () => {
@@ -277,4 +278,54 @@ test('uses owned agent color for material while keeping spectators neutral', () 
   assert.equal(materialPerspective('black', null), 'black');
   assert.equal(materialPerspective(null, 'white'), 'white');
   assert.equal(materialPerspective(null, null), 'white');
+});
+
+test('builds an absolute agent invitation only from the server join path', () => {
+  assert.equal(
+    buildAgentInviteUrl('https://agent-chess.example:8443', '/agent/join?ticket=one-use'),
+    'https://agent-chess.example:8443/agent/join?ticket=one-use',
+  );
+});
+
+test('selects current structured decision without exposing private reasoning', () => {
+  assert.deepEqual(selectDecisionBrief({ activity: [
+    { type: 'agent.trace', source: 'agent', phase: 'evaluate', summary: 'Private scratchpad: attack h7', reasoning: 'hidden' },
+    { type: 'agent.decision', source: 'agent_reported', actor: 'agent', phase: 'choose', summary: 'Develop king-side pressure.', selectedMove: 'g1f3', candidates: [{ uci: 'g1f3', note: 'Develop' }, { uci: 'd2d4', note: 'Center' }], disclosure: 'public' },
+  ] }), {
+    state: 'decision', intent: 'Develop king-side pressure.', candidates: [{ uci: 'g1f3', note: 'Develop' }, { uci: 'd2d4', note: 'Center' }], selectedMove: 'g1f3', disclosure: 'Agent reported',
+  });
+  assert.deepEqual(selectDecisionBrief({ status: 'failed', game: { gameOver: false }, activity: [] }), {
+    state: 'failed', intent: 'Match failed before an agent decision was published.', candidates: [], selectedMove: '', disclosure: 'System status',
+  });
+  assert.deepEqual(selectDecisionBrief({ activity: [{ source: 'agent', phase: 'evaluate', summary: 'Private chain of thought' }] }), {
+    state: 'working', intent: 'Agent is evaluating current position.', candidates: [], selectedMove: '', disclosure: 'Phase status',
+  });
+  assert.deepEqual(selectDecisionBrief({ activity: [] }), {
+    state: 'empty', intent: 'No public agent decision yet.', candidates: [], selectedMove: '', disclosure: 'No disclosure',
+  });
+});
+
+test('uses spectator-first hierarchy while preserving match controls', async () => {
+  const [html, app, css] = await Promise.all([
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  assert.match(html, /id="status-line"/);
+  assert.match(html, /id="decision-brief"/);
+  assert.match(html, /<details class="panel technical-activity"/);
+  assert.match(html, /<details class="panel steering-details"/);
+  assert.match(html, /Copy agent link/);
+  assert.match(html, /id="copy-agent-link"/);
+  assert.match(html, /id="copy-command"/);
+  for (const id of ['lifecycle-action', 'download-match', 'share-match', 'focus-mode', 'copy-pgn', 'moves']) assert.match(html, new RegExp(`id="${id}"`));
+  assert.match(app, /buildAgentInviteUrl\(location\.origin, session\.joinPath\)/);
+  assert.match(app, /copy-agent-link.*addEventListener/s);
+  assert.match(app, /connector\.classList\.toggle\('connected'/);
+  assert.doesNotMatch(html, /id="connect-command">[^<]+ticket=/);
+  assert.match(css, /--live-board-size:\s*min\(820px,\s*calc\(100dvh\s*-\s*220px\)/);
+  assert.match(css, /\.control-rail\s*\{[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.technical-activity/);
+  assert.match(css, /@media \(max-width: 1020px\)[\s\S]*?\.control-rail\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.connector-actions button\s*\{[^}]*min-height:\s*44px/);
 });
