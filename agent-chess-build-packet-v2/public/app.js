@@ -33,6 +33,50 @@ export function groupMoves(movesSan = []) {
   return rows;
 }
 
+const TURN_PHASES = [
+  { key: 'observe', label: 'Observe' },
+  { key: 'probe', label: 'Probe' },
+  { key: 'evaluate', label: 'Evaluate' },
+  { key: 'choose', label: 'Choose' },
+  { key: 'submit', label: 'Submit' },
+];
+
+const PHASE_ALIASES = {
+  selection: 'choose',
+  thinking: 'evaluate',
+  demo: 'evaluate',
+};
+
+export function deriveTurnPhase(match = {}) {
+  const entry = [...(match.activity ?? [])].reverse().find((item) => item?.phase);
+  const key = PHASE_ALIASES[entry?.phase] ?? entry?.phase;
+  const phase = TURN_PHASES.find((item) => item.key === key);
+  return phase ?? { key: 'waiting', label: 'Waiting for turn' };
+}
+
+export function formatActivity(entry = {}) {
+  const agent = entry.source === 'agent';
+  const typeLabels = {
+    'turn.start': 'Position received',
+    'moves.list': 'Piece moves checked',
+    'moves.list_all': 'Legal moves checked',
+    'history.list': 'History checked',
+    'move.validate': 'Candidate checked',
+    'move.submit': 'Move submitted',
+    'opponent.move': 'Opponent moved',
+  };
+  const count = Number.isFinite(entry.count) ? `${entry.count} legal move${entry.count === 1 ? '' : 's'}` : '';
+  const meta = entry.type === 'moves.list' && entry.square && count ? `${entry.square} · ${count}` : entry.selectedMove ?? '';
+  const fallback = agent && entry.phase ? 'Agent working' : 'Verified system event';
+  return {
+    label: agent ? deriveTurnPhase({ activity: [entry] }).label : (typeLabels[entry.type] ?? 'System event'),
+    meta,
+    detail: entry.summary?.trim() || fallback,
+    source: agent ? 'agent' : 'system',
+    candidates: Array.isArray(entry.candidates) ? entry.candidates.slice(0, 3) : [],
+  };
+}
+
 export function deriveMatchSummary(match) {
   const game = match.game;
   const agentWon = (match.agentColor === 'white' && game.result === '1-0') || (match.agentColor === 'black' && game.result === '0-1');
@@ -130,27 +174,37 @@ function renderMoves(match) {
   list.scrollTop = list.scrollHeight;
 }
 
-function traceTitle(item) {
-  if (item.type === 'agent.move') return `Agent played ${item.san}`;
-  if (item.type === 'opponent.move') return `Stockfish played ${item.san}`;
-  if (item.type === 'agent.trace') return item.phase ? `Agent · ${item.phase}` : 'Agent update';
-  return 'Trainer guidance queued';
-}
-
 function renderTrace(match) {
-  const trace = qs('trace');
+  const trace = qs('activity');
+  const activity = match.activity?.length ? match.activity : match.trace ?? [];
   trace.replaceChildren();
-  if (!match.trace.length) {
-    trace.innerHTML = '<div class="trace-empty"><strong>Waiting for activity</strong><p>Private reasoning remains local. Structured summaries, moves, and steering events appear here.</p></div>';
+  if (!activity.length) {
+    trace.innerHTML = '<div class="trace-empty"><strong>Waiting for activity</strong><p>Verified system events plus optional agent summaries appear after connector starts.</p></div>';
     return;
   }
-  for (const item of [...match.trace].reverse()) {
+  for (const item of [...activity].reverse()) {
+    const formatted = formatActivity(item);
     const entry = document.createElement('article');
-    entry.className = 'trace-entry';
-    const detail = item.summary ?? item.message ?? (item.type.includes('move') ? `${item.uci} · ${item.san}` : '');
-    entry.innerHTML = `<strong>${traceTitle(item)}</strong><small>${new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</small>${detail ? `<p>${detail}</p>` : ''}`;
+    entry.className = `trace-entry ${formatted.source}`;
+    const time = item.at ? new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+    const candidates = formatted.candidates.length
+      ? `<ul class="candidate-list">${formatted.candidates.map((candidate) => `<li><code>${candidate.uci}</code>${candidate.note ? ` <span>${candidate.note}</span>` : ''}</li>`).join('')}</ul>`
+      : '';
+    entry.innerHTML = `<strong>${formatted.source === 'agent' ? 'Agent' : 'System'} · ${formatted.label}</strong><small>${time}</small>${formatted.meta ? `<span class="activity-meta">${formatted.meta}</span>` : ''}<p>${formatted.detail}</p>${candidates}`;
     trace.append(entry);
   }
+}
+
+function renderPhaseRibbon(match) {
+  const current = deriveTurnPhase(match);
+  const currentIndex = TURN_PHASES.findIndex((phase) => phase.key === current.key);
+  qs('phase-current').textContent = current.label;
+  qs('phase-ribbon').replaceChildren(...TURN_PHASES.map((phase, index) => {
+    const item = document.createElement('li');
+    item.className = index < currentIndex ? 'complete' : phase.key === current.key ? 'current' : '';
+    item.innerHTML = `<span aria-hidden="true">${index < currentIndex ? '✓' : index + 1}</span><strong>${phase.label}</strong>`;
+    return item;
+  }));
 }
 
 function renderReview(match, summary) {
@@ -194,6 +248,7 @@ function render(match) {
   qs('summary-moves').textContent = String(summary.moveCount);
   qs('summary-steering').textContent = summary.steeringLabel;
   qs('summary-termination').textContent = summary.termination;
+  renderPhaseRibbon(match);
   renderBoard(match);
   renderMoves(match);
   renderTrace(match);

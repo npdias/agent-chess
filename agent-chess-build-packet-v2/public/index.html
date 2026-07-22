@@ -50,6 +50,11 @@
           <div class="context-actions"><span id="mode" class="pill"></span><button id="copy-pgn" class="ghost-button" type="button">Copy PGN</button></div>
         </div>
 
+        <section class="phase-ribbon" aria-label="Agent turn phase">
+          <div class="phase-ribbon-heading"><span>Agent turn</span><strong id="phase-current" aria-live="polite">Waiting for turn</strong></div>
+          <ol id="phase-ribbon" class="phase-steps"></ol>
+        </section>
+
         <div class="player-strip opponent">
           <div class="player-identity"><span class="avatar avatar-engine">SF</span><div><strong id="opponent-name">Stockfish</strong><small id="engine-inline">Local engine opponent</small></div></div>
           <div class="player-meta"><span class="rating-label">Engine</span><span class="clock" id="engine-state">Ready</span></div>
@@ -85,16 +90,15 @@
           </div>
         </section>
 
+        <section class="panel activity-panel" aria-labelledby="activity-title">
+          <div class="panel-title"><h2 id="activity-title">Live activity</h2><span class="live-label"><i></i>Visible</span></div>
+          <div id="activity" class="trace" aria-live="polite"></div>
+        </section>
+
         <section class="panel tab-panel">
           <div class="tabs" role="tablist">
-            <button class="tab active" type="button" data-tab="trace">Agent trace</button>
             <button class="tab" type="button" data-tab="steering">Steering</button>
-            <button class="tab" type="button" data-tab="moves">Moves</button>
-          </div>
-
-          <div id="tab-trace" class="tab-content active" role="tabpanel">
-            <div class="panel-title"><h2>Agent activity</h2><span class="live-label"><i></i>Live</span></div>
-            <div id="trace" class="trace"></div>
+            <button class="tab active" type="button" data-tab="moves">Moves</button>
           </div>
 
           <div id="tab-steering" class="tab-content" role="tabpanel">
@@ -107,7 +111,7 @@
             <div id="steering-locked" class="locked-state"><strong>Steering is locked</strong><p>This match measures autonomous play. Mid-match coaching is disabled.</p></div>
           </div>
 
-          <div id="tab-moves" class="tab-content" role="tabpanel">
+          <div id="tab-moves" class="tab-content active" role="tabpanel">
             <div class="panel-title"><h2>Move history</h2><span>White / Black</span></div>
             <div id="moves" class="moves"></div>
           </div>

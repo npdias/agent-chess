@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fenToBoard, squareName, deriveMatchSummary, groupMoves } from '../public/app.js';
+import { readFile } from 'node:fs/promises';
+import { fenToBoard, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, formatActivity } from '../public/app.js';
 
 test('maps FEN piece placement into 64 board squares', () => {
   const board = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
@@ -46,4 +47,31 @@ test('groups SAN history into numbered move rows', () => {
     { number: 1, white: 'e4', black: 'e5' },
     { number: 2, white: 'Nf3', black: '' },
   ]);
+});
+
+test('derives verified turn phase or truthful waiting fallback', () => {
+  assert.equal(deriveTurnPhase({ activity: [{ phase: 'probe' }] }).key, 'probe');
+  assert.equal(deriveTurnPhase({ activity: [] }).label, 'Waiting for turn');
+});
+
+test('formats system probe activity as compact verified metadata', () => {
+  assert.equal(formatActivity({ source: 'system', type: 'moves.list', square: 'e2', count: 2 }).meta, 'e2 · 2 legal moves');
+});
+
+test('shows an agent-working fallback without invented decision text', () => {
+  const activity = formatActivity({ source: 'agent', type: 'agent.trace', phase: 'evaluate' });
+  assert.equal(activity.label, 'Evaluate');
+  assert.equal(activity.detail, 'Agent working');
+});
+
+test('keeps phase ribbon and activity rail visible outside secondary tabs', async () => {
+  const [html, css] = await Promise.all([
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+
+  assert.match(html, /class="phase-ribbon"/);
+  assert.match(html, /id="activity"/);
+  assert.match(css, /\.board\s*\{[^}]*aspect-ratio:\s*1/);
+  assert.match(css, /\.square\s*\{[^}]*aspect-ratio:\s*1/);
 });
