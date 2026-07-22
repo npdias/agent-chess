@@ -71,7 +71,7 @@ npm run smoke -- --server http://127.0.0.1:3000 --turns 3
 
 ## Privacy boundary
 
-Service receives chess protocol data, seat token, optional concise public trace. It does not request prompts, chain-of-thought, credentials, private memory, local files, or rejected command output. Do not include secrets in `trace.publish` fields.
+Service never requests chain-of-thought, prompts, credentials, secrets, private memory, or local files. Explicit `trace.publish` text is stored in match activity and broadcast to observer clients. Never publish secrets or private reasoning in trace fields.
 
 ## POC boundaries
 

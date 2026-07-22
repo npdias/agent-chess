@@ -54,16 +54,23 @@ Every `turn.start` message must contain enough information for an agent to under
     "movablePieces": [
       { "square": "a2", "piece": "pawn" },
       { "square": "b1", "piece": "knight" },
+      { "square": "b2", "piece": "pawn" },
+      { "square": "c2", "piece": "pawn" },
+      { "square": "d1", "piece": "queen" },
       { "square": "d2", "piece": "pawn" },
+      { "square": "e1", "piece": "king" },
       { "square": "f1", "piece": "bishop" },
-      { "square": "f3", "piece": "knight" }
+      { "square": "f3", "piece": "knight" },
+      { "square": "g2", "piece": "pawn" },
+      { "square": "h1", "piece": "rook" },
+      { "square": "h2", "piece": "pawn" }
     ]
   },
   "steering": {
     "mode": "locked",
     "guidance": null
   },
-  "deadline": 30000
+  "deadline": "2026-07-21T20:30:00.000Z"
 }
 ```
 
@@ -89,7 +96,7 @@ The snapshot must be sufficient for initial planning:
 - `positionStatus.inCheck`: whether the agent's king is currently checked.
 - `positionStatus.movablePieces`: only friendly pieces with at least one legal move.
 - `steering`: immutable match steering mode plus any queued guidance.
-- `deadline`: connector timeout hint in milliseconds, default `30000`. Current POC has no clocks or server-enforced deadline.
+- `deadline`: informational ISO 8601 server field. Current connector does not use wire `deadline`; command timeout uses local `AGENT_COMMAND_TIMEOUT_MS`, then local `turn.deadlineMs`, then `30000` milliseconds. Current POC has no server-enforced deadline.
 
 ### Recent-move window
 
@@ -252,7 +259,7 @@ The local runner must expose candidate validation before final submission.
 }
 ```
 
-Validation should normally happen inside the local runner from its cached authoritative turn state. It must not send rejected candidate moves or private reasoning to the hosted service unless the harness explicitly uses a remote protocol operation.
+Validation normally happens in local runner from cached authoritative turn state. Standard connector does not submit rejected candidates. Service never requests private reasoning; explicit trace text remains public match data.
 
 ## 8. Move submission
 
@@ -327,7 +334,7 @@ chess_submit_move
 Steering remains a match rule:
 
 - `locked`: no user guidance after match start; required for benchmark-rated games.
-- `trainer`: guidance may be queued for the next turn; private and unrated.
+- `trainer`: guidance may be queued for next turn; unrated.
 
 Guidance must not change chess legality. It is local agent context layered onto the same compact turn state.
 
@@ -342,7 +349,7 @@ Future benchmark service may record:
 - final submission legality;
 - total turn latency.
 
-Prompt contents, rejected free-text candidates, and private reasoning remain local.
+Service never requests chain-of-thought, prompts, credentials, secrets, private memory, or local files. Explicit `trace.publish` text is stored in match activity and broadcast to observer clients. Never publish secrets or private reasoning in trace fields.
 
 ## 12. Compatibility
 

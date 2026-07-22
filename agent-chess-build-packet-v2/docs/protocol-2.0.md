@@ -12,7 +12,7 @@
 { "type": "match.start", "matchId": "UUID", "steeringMode": "locked", "agentColor": "white" }
 ```
 
-`turn.start` is compact. `recentMoves` contains at most 12 plies. `positionStatus.movablePieces` contains each friendly origin with at least one legal move. `deadline` is current connector timeout hint in milliseconds, default `30000`; it is not an ISO timestamp or server-enforced clock.
+`turn.start` is compact. `recentMoves` contains at most 12 plies. `positionStatus.movablePieces` contains every friendly origin with at least one legal move. `deadline` is informational ISO 8601 server field; it is not a server-enforced clock. Current connector does not use wire `deadline`: it uses local `AGENT_COMMAND_TIMEOUT_MS`, then local `turn.deadlineMs`, then default `30000` milliseconds.
 
 ```json
 {
@@ -26,9 +26,18 @@
   "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
   "ply": 0,
   "recentMoves": [],
-  "positionStatus": { "inCheck": false, "movablePieces": [{ "square": "e2", "piece": "pawn" }] },
+  "positionStatus": {
+    "inCheck": false,
+    "movablePieces": [
+      { "square": "a2", "piece": "pawn" }, { "square": "b1", "piece": "knight" },
+      { "square": "b2", "piece": "pawn" }, { "square": "c2", "piece": "pawn" },
+      { "square": "d2", "piece": "pawn" }, { "square": "e2", "piece": "pawn" },
+      { "square": "f2", "piece": "pawn" }, { "square": "g1", "piece": "knight" },
+      { "square": "g2", "piece": "pawn" }, { "square": "h2", "piece": "pawn" }
+    ]
+  },
   "steering": { "mode": "locked", "guidance": null },
-  "deadline": 30000
+  "deadline": "2026-07-21T20:30:00.000Z"
 }
 ```
 
@@ -130,7 +139,7 @@ Connector invokes configured command using shell, sends compact active turn JSON
 
 ## Privacy
 
-Protocol supports optional public summaries only. Service does not ask for or store raw chain-of-thought, prompts, credentials, private memory, local files, or rejected free-text command output. Trace contents are visible to observer clients through state/event broadcasts. Never include secrets.
+Service never requests chain-of-thought, prompts, credentials, secrets, private memory, or local files. Explicit `trace.publish` text is stored in match activity and broadcast to observer clients through state/event broadcasts. Never publish secrets or private reasoning in trace fields.
 
 ## Breaking migration from 1.0
 
