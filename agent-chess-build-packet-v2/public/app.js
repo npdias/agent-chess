@@ -87,8 +87,10 @@ export function formatActivity(entry = {}) {
   const count = Number.isFinite(entry.count) ? `${entry.count} legal move${entry.count === 1 ? '' : 's'}` : '';
   const meta = entry.type === 'moves.list' && entry.square && count ? `${entry.square} · ${count}` : entry.selectedMove ?? '';
   const fallback = agent && entry.phase ? 'Agent working' : source === 'connector' ? 'Connector status' : 'Verified system event';
+  const tracePhase = TURN_PHASES.find((phase) => phase.key === (PHASE_ALIASES[entry.phase] ?? entry.phase));
+  const traceLabel = tracePhase?.label ?? (entry.kind === 'decision' ? 'Decision' : source === 'connector' ? 'Connector status' : 'Status');
   return {
-    label: entry.type === 'agent.trace' ? deriveTurnPhase({ activity: [entry] }).label : (typeLabels[entry.type] ?? 'System event'),
+    label: entry.type === 'agent.trace' ? traceLabel : (typeLabels[entry.type] ?? 'System event'),
     meta,
     detail: entry.summary?.trim() || entry.message?.trim() || fallback,
     source,

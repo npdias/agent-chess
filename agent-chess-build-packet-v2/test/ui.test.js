@@ -77,6 +77,11 @@ test('labels connector status and visible engine errors without claiming agent a
   });
 });
 
+test('uses neutral labels for unknown trace phases instead of a waiting state', () => {
+  assert.equal(formatActivity({ source: 'agent', kind: 'decision', type: 'agent.trace', phase: 'gpt-5.6' }).label, 'Decision');
+  assert.equal(formatActivity({ source: 'connector', kind: 'status', type: 'agent.trace', phase: 'failed' }).label, 'Connector status');
+});
+
 test('only marks phase ribbon steps backed by current-turn activity', () => {
   const match = {
     activity: [
