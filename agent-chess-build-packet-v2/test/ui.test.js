@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fenToBoard, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry } from '../public/app.js';
+import { fenToBoard, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
 
 test('maps FEN piece placement into 64 board squares', () => {
   const board = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
@@ -130,6 +130,14 @@ test('renders malicious activity text without injecting markup', () => {
   const text = nodes.map((node) => node.textContent).filter(Boolean);
   assert.equal(entry.innerHTML, undefined);
   assert.deepEqual(text, ['Agent · Evaluate', '<img src=x onerror=alert(1)>', 'e2e4', ' <script>alert(1)</script>']);
+});
+
+test('renders hostile public seat names as text in review rows', () => {
+  const nodes = [];
+  const doc = { createElement(tag) { const node = { tag, children: [], append(...items) { this.children.push(...items); } }; nodes.push(node); return node; } };
+  const row = buildReviewItem(doc, 'White', '<img src=x onerror=alert(1)>');
+  assert.equal(row.innerHTML, undefined);
+  assert.equal(nodes.at(-1).textContent, '<img src=x onerror=alert(1)>');
 });
 
 test('keeps phase ribbon and activity rail visible outside secondary tabs', async () => {

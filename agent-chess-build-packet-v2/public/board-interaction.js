@@ -98,10 +98,20 @@ export function materialSummary(initialFen, currentFen, perspective = 'white') {
       const token = color === 'white' ? piece.toUpperCase() : piece;
       const missing = Math.max(0, count(initial, token) - count(current, token));
       if (missing) captured.push(`${color} ${piece === 'p' ? 'pawn' : ({ n: 'knight', b: 'bishop', r: 'rook', q: 'queen' }[piece])}`);
-      difference += (color === perspective ? -1 : 1) * missing * value;
     }
   }
+  for (const [piece, value] of Object.entries(values)) {
+    difference += (count(current, perspective === 'white' ? piece.toUpperCase() : piece) - count(current, perspective === 'white' ? piece : piece.toUpperCase())) * value;
+  }
   return { captured, difference };
+}
+
+export function controllerColor(matchId, seats = {}, getCapability) {
+  return Object.entries(seats).find(([color, seat]) => seat.kind === 'human' && getCapability(`${matchId}:capability:${color}`))?.[0] ?? null;
+}
+
+export function consumeSuppressedClick(suppressed) {
+  return { handle: !suppressed, suppressed: false };
 }
 
 export function replayPlyForRow(index, hasBlackMove, totalPly) {

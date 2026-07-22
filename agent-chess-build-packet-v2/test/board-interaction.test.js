@@ -9,6 +9,8 @@ import {
   deriveExhibitionSummary,
   materialSummary,
   replayPlyForRow,
+  controllerColor,
+  consumeSuppressedClick,
 } from '../public/board-interaction.js';
 
 function initialHumanMatch(color) {
@@ -179,4 +181,20 @@ test('derives captured piece names and side-relative material difference', () =>
 test('maps a move row to its final ply for keyboard replay', () => {
   assert.equal(replayPlyForRow(0, true, 5), 2);
   assert.equal(replayPlyForRow(2, false, 5), 5);
+});
+
+test('does not give a spectator human controls without a private capability', () => {
+  assert.equal(controllerColor('m', { white: { kind: 'human' } }, () => null), null);
+  assert.equal(controllerColor('m', { white: { kind: 'human' } }, () => 'private'), 'white');
+});
+
+test('counts promotion material from current totals', () => {
+  const initial = '4k3/P7/8/8/8/8/8/4K3 w - - 0 1';
+  const promoted = 'Q3k3/8/8/8/8/8/8/4K3 b - - 0 1';
+  assert.equal(materialSummary(initial, promoted, 'white').difference, 9);
+});
+
+test('suppresses follow-up click after drag submission', () => {
+  assert.deepEqual(consumeSuppressedClick(true), { handle: false, suppressed: false });
+  assert.deepEqual(consumeSuppressedClick(false), { handle: true, suppressed: false });
 });

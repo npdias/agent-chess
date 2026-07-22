@@ -1,4 +1,4 @@
-import { canHumanMove, selectHumanSquare, buildHumanMove, capabilityStorageEntries, deriveExhibitionSummary, materialSummary, replayPlyForRow } from './board-interaction.js';
+import { canHumanMove, selectHumanSquare, buildHumanMove, capabilityStorageEntries, deriveExhibitionSummary, materialSummary, replayPlyForRow, controllerColor, consumeSuppressedClick } from './board-interaction.js';
 
 const PIECES = {
   K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
@@ -159,6 +159,14 @@ export function deriveMatchSummary(match) {
   return deriveExhibitionSummary(match);
 }
 
+export function buildReviewItem(doc, label, value) {
+  const row = doc.createElement('div'); row.className = 'review-item';
+  const name = doc.createElement('span'); name.textContent = label;
+  const detail = doc.createElement('strong'); detail.textContent = value;
+  row.append(name, detail);
+  return row;
+}
+
 function qs(id) { return document.getElementById(id); }
 let boardFlipped = false;
 let currentMatch = null;
@@ -170,6 +178,7 @@ let selection = { selected: null, legalTargets: [], legalMoves: [] };
 let replayPly = null;
 let pendingMove = false;
 let dragFrom = null;
+let suppressClick = false;
 
 function toast(message) {
   const node = qs('toast');
@@ -212,10 +221,10 @@ function renderBoard(match) {
     if (selection.legalTargets.includes(name)) square.classList.add(piece ? 'legal-capture' : 'legal-target');
     if (match.game.inCheck && piece?.toLowerCase() === 'k' && (piece === piece.toUpperCase()) === (match.game.turn === 'white')) square.classList.add('in-check');
     if (pendingMove) square.classList.add('submission-pending');
-    square.disabled = !canHumanMove(match, humanColor) || replayPly !== null || pendingMove;
-    square.addEventListener('click', () => handleSquare(name));
+    square.disabled = !humanCapability || !canHumanMove(match, humanColor) || replayPly !== null || pendingMove;
+    square.addEventListener('click', () => { const click = consumeSuppressedClick(suppressClick); suppressClick = click.suppressed; if (click.handle) handleSquare(name); });
     square.addEventListener('pointerdown', () => { dragFrom = name; });
-    square.addEventListener('pointerup', () => { if (dragFrom && dragFrom !== name) { selection = selectHumanSquare(selection, dragFrom, currentMatch, humanColor); handleSquare(name); } dragFrom = null; });
+    square.addEventListener('pointerup', () => { if (dragFrom && dragFrom !== name) { suppressClick = true; selection = selectHumanSquare(selection, dragFrom, currentMatch, humanColor); handleSquare(name); } dragFrom = null; });
     if (piece) {
       const token = document.createElement('span');
       token.className = `piece ${piece === piece.toUpperCase() ? 'white-piece' : 'black-piece'}`;
@@ -294,7 +303,7 @@ function renderReview(match, summary) {
     ['White', match.seats.white.name],
     ['Trace events', String(match.trace.length)],
   ];
-  qs('review-list').innerHTML = items.map(([label, value]) => `<div class="review-item"><span>${label}</span><strong>${value}</strong></div>`).join('');
+  qs('review-list').replaceChildren(...items.map(([label, value]) => buildReviewItem(document, label, value)));
 }
 
 function render(match) {
@@ -303,8 +312,6 @@ function render(match) {
   qs('empty-state').hidden = true;
   qs('match-view').hidden = false;
   const seats = match.seats ?? {};
-  const humanSeat = Object.entries(seats).find(([, seat]) => seat.kind === 'human');
-  if (!humanColor && humanSeat) { humanColor = humanSeat[0]; boardFlipped = humanColor === 'black'; }
   qs('connection').textContent = 'Unrated exhibition';
   qs('connection').dataset.connected = String(match.connected);
   qs('connection-small').textContent = summary.activeName;
@@ -363,8 +370,9 @@ async function loadMatch(matchId) {
     return;
   }
   const match = await response.json();
-  humanColor = Object.entries(match.seats).find(([color, seat]) => seat.kind === 'human' && sessionStorage.getItem(`${matchId}:capability:${color}`))?.[0] ?? null;
+  humanColor = controllerColor(matchId, match.seats, (key) => sessionStorage.getItem(key));
   humanCapability = humanColor && sessionStorage.getItem(`${matchId}:capability:${humanColor}`);
+  if (humanCapability) boardFlipped = humanColor === 'black';
   render(match);
   eventSocket?.close();
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
