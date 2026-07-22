@@ -80,6 +80,24 @@ async function waitForPly(address, matchId, ply, timeoutMs = 3000) {
   throw new Error(`ply ${ply} timeout`);
 }
 
+async function runReferenceConnectorFailure(address, created, command) {
+  const observer = new WebSocket(`${address.wsUrl}/events?matchId=${created.matchId}`);
+  const messages = collectMessages(observer);
+  await new Promise((resolve, reject) => { observer.once('open', resolve); observer.once('error', reject); });
+  const child = spawn(process.execPath, [
+    'bin/connect-agent.js', '--server', address.httpUrl, '--seat', created.capabilities.white, '--command', command,
+  ], { cwd: new URL('..', import.meta.url) });
+  let stdout = ''; let stderr = '';
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  const [code] = await once(child, 'close');
+  const failedTrace = await messages.next((message) => message.type === 'trace.publish' && message.entry?.phase === 'failed');
+  const snapshot = await getMatch(address, created.matchId);
+  const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`).then((response) => response.json());
+  observer.close();
+  return { code, stdout, stderr, failedTrace, snapshot, exported, events: messages.ordered() };
+}
+
 test('human White move is authenticated and followed by engine move', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);
@@ -501,6 +519,49 @@ test('reference connector exits nonzero after stable decision-deadline failure',
     assert.deepEqual({ status: snapshot.status, termination: snapshot.termination, failureCode: snapshot.failureCode }, {
       status: 'failed', termination: 'failure', failureCode: 'AGENT_FAILURE',
     });
+  } finally {
+    await server.stop();
+  }
+});
+
+test('reference connector keeps command stderr diagnostics local and publishes stable failure status', async () => {
+  const secret = 'connector-child-secret';
+  const privatePath = '/Users/nicholasdias/private-agent.js';
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const result = await runReferenceConnectorFailure(address, created, 'node test/fixtures/failing-secret-agent.js');
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, new RegExp(secret));
+    assert.match(result.stderr, new RegExp(privatePath.replaceAll('/', '\\/')));
+    assert.equal(result.failedTrace.entry.summary, 'Agent connector failed.');
+    assert.equal(result.failedTrace.entry.source, 'adapter_generated');
+    const publicText = JSON.stringify({ events: result.events, snapshot: result.snapshot, exported: result.exported });
+    assert.doesNotMatch(publicText, new RegExp(secret));
+    assert.doesNotMatch(publicText, new RegExp(privatePath.replaceAll('/', '\\/')));
+  } finally {
+    await server.stop();
+  }
+});
+
+test('reference connector publishes stable failure when command returns invalid trace source', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const result = await runReferenceConnectorFailure(address, created, 'node test/fixtures/invalid-trace-source-agent.js');
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /INVALID_TRACE_SOURCE/);
+    assert.equal(result.failedTrace.entry.summary, 'Agent connector failed.');
+    const publicText = JSON.stringify({ events: result.events, snapshot: result.snapshot, exported: result.exported });
+    assert.doesNotMatch(publicText, /INVALID_TRACE_SOURCE|"System"/);
   } finally {
     await server.stop();
   }

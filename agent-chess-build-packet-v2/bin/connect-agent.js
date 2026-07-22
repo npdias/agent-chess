@@ -39,7 +39,7 @@ export async function run(args) {
   }
 
   function fail(message) {
-    if (activeTurn) publish(activeTurn.turnId, { kind: 'status', phase: 'failed', summary: message });
+    if (activeTurn) publish(activeTurn.turnId, { kind: 'status', phase: 'failed', summary: 'Agent connector failed.' });
     console.error(`Agent failed: ${message}`);
     process.exitCode = 1;
     socket.close(1011, 'agent failure');
