@@ -30,3 +30,5 @@ Core Hardening A: complete at 36f300e (private auth, guidance redaction, atomic 
 Core Hardening B: complete at 3216863 (exactly-once terminal delivery, engine race, quoted ticket connector; review approved).
 Core Hardening C: complete at f469829 (engine metadata, PGN lifecycle consistency, exact-ply replay; review approved).
 Final validation delta: complete at 094b4cc (180 tests, silent ticket-safe connector, 10-ply browser human-agent evidence, private matrix; review approved). npm audit remains externally authorization-blocked.
+Core Hardening D: complete at 806694e (three-source provenance preservation/defaulting, adapter-generated demo/status traces, UI Decision label, stable failed terminal payloads, ordered error-before-game.end, nonzero connector exits, raw-diagnostic redaction).
+Final Hardening D validation: 184/184 tests; focused proof 11/11; refreshed 12-ply core matrix retains privacy, guidance, connector, PGN, engine-metadata checks. Existing Agent reported screenshot remains current because matrix harness explicitly emits `agent_reported`. npm audit was not retried and remains an external authorization gap only.

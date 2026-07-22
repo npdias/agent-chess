@@ -2,7 +2,7 @@
 
 Status: **PASS — requested code-hardening contracts closed by current evidence.**
 
-Validated hardening baseline: `f4698299eaba2f8f6920f31d40311b191581b1c5`.
+Validated hardening baseline: `806694e7c00f5030bcfb76965fdcf65c52ef9473`.
 
 Validation found two UI command/disclosure defects. Both were fixed with literal RED→GREEN tests in the evidence refresh commit containing this report.
 
@@ -16,8 +16,8 @@ Validation found two UI command/disclosure defects. Both were fixed with literal
 
 | Command | Result |
 | --- | --- |
-| `npm test` at hardening baseline `f469829` | PASS — 179 tests, 179 pass, 0 fail; 2570.498042 ms. |
-| `npm test` after validation fixes | PASS — 180 tests, 180 pass, 0 fail; 2504.364292 ms. |
+| `npm test` at Hardening D baseline `806694e` | PASS — 184 tests, 184 pass, 0 fail; 2891.327541 ms. |
+| Hardening D focused proof | PASS — 11/11. Connector provenance 4/4 (49.099667 ms); adapter status 1/1 (169.967666 ms); UI disclosure 1/1 (106.958458 ms); terminal failure 5/5 (486.528833 ms). |
 | Focused server hardening group | PASS — 9/9; 603.477 ms. Covers engine metadata separation, private auth/events, guidance suppression, quoted connector, terminal delivery/reconnect/race, engine resign races. |
 | Focused PGN group | PASS — 2/2; 144.42175 ms. Covers resignation/failure headers plus draw result/termination. |
 | Focused UI group | PASS — 3/3; 85.139125 ms. Covers zsh path quoting, npm echo suppression, humanized disclosure labels. |
@@ -30,11 +30,19 @@ Exact focused test names, counts, durations, browser summary: [task8-hardening-f
 1. Exact copied command used `npm run connect`, causing npm to echo the one-use ticket path. RED: `suppresses npm script echo in copied ticket command` failed 0/1. Fix: copied command now uses `npm run --silent connect`. Functional `/bin/zsh -f -c` contract reached connector, produced terminal output, exited `0`, had no glob failure, printed neither capability nor ticket. Integration regression: `browser copied quoted --path command joins without printing its ticket`.
 2. Public disclosure provenance rendered raw `agent_reported`. RED mapping test failed. Display labels now map `agent_reported` → `Agent reported`, `provider_summary` → `Provider summary`, `adapter_generated` → `Adapter generated`; raw model value remains unchanged.
 
+## Hardening D proof
+
+- Provenance: `agent_reported`, `provider_summary`, `adapter_generated` survive their intended connector/protocol paths; absent command source defaults to `agent_reported`; demo moves plus precommit status use `adapter_generated`; provider summary reaches public snapshot unchanged.
+- UI: committed `agent.decision` renders label `Decision` while disclosure provenance remains separate.
+- Decision deadline failure: `error` precedes `game.end`; terminal payload reports `status: failed`, `termination: failure`, `failureCode: AGENT_FAILURE`; reference connector exits `1`; raw `Decision deadline exceeded` diagnostic is absent.
+- Engine failure: `error` precedes `game.end`; terminal payload reports `status: failed`, `termination: failure`, `failureCode: ENGINE_FAILURE`; reference connector exits `1`; injected raw engine diagnostic is absent.
+- Exact test names, grouped counts, assertions: [task8-hardening-focused.json](evidence/task8-hardening-focused.json).
+
 ## Core matrix
 
 `node bin/validate-core-matrix.mjs http://127.0.0.1:3000` produced tracked [task8-core-matrix.json](evidence/task8-core-matrix.json).
 
-- Public agent match `a874a19c-7f0d-415d-84ef-46296af8d4b8`: 12 plies, 6 human moves, 6 agent moves, 33 observer states, accepted `agent_reported` decision, spectator submit `401`, PGN present, no capability value/name leak, no engine metadata.
+- Public agent match `ee4a7f67-a98f-4652-b944-ba3c47123f6a`: 12 plies, 6 human moves, 6 agent moves, 33 observer states, accepted `agent_reported` decision, spectator submit `401`, PGN present, no capability value/name leak, no engine metadata.
 - Private contract: unauthorized match GET `401`; bound-seat GET `200`; unauthorized export `401`; private `/events` rejected.
 - Guidance sentinel: steering POST `202`; sentinel absent from snapshot, observer state, export; public active turn omitted steering; no capability leak.
 - Quoted connector contract: silent npm command connected, resigned `202`, received terminal output, exited `0`; no zsh glob failure, stderr, capability value, ticket value.
@@ -55,6 +63,8 @@ Result: one `game.end` per agent socket, terminal reconnect receives one termina
 ## Browser evidence
 
 Playwright CLI used fresh snapshots before refs. No capability/ticket value appears in retained evidence.
+
+No screenshot refresh was required for Hardening D. Matrix and connector harnesses explicitly emit `agent_reported`; focused proof confirms it remains the committed decision source. Existing spectator screenshot's `Agent reported` disclosure therefore remains current. New `Decision` labeling is focused-test proof, not a refreshed screenshot claim.
 
 Real UI setup: API created public Human-v-agent match `b81b4bae-bfe9-48c2-9000-930c7c083f63`. One-shot loopback injector placed human capability into controlled browser `sessionStorage`; value was never read back. External harness retained agent capability and ran supported connector. This is controlled API setup plus real browser move submission, not browser-created match setup.
 
