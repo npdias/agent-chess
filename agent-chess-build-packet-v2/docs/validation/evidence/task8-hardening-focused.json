@@ -1,0 +1,72 @@
+{
+  "validatedCodeCommit": "f4698299eaba2f8f6920f31d40311b191581b1c5",
+  "baselineSuite": {
+    "tests": 179,
+    "pass": 179,
+    "fail": 0,
+    "durationMs": 2570.498042
+  },
+  "postValidationFixSuite": {
+    "tests": 180,
+    "pass": 180,
+    "fail": 0,
+    "durationMs": 2504.364292
+  },
+  "serverFocused": {
+    "tests": 9,
+    "pass": 9,
+    "fail": 0,
+    "durationMs": 603.477,
+    "names": [
+      "exports reproducibility metadata only for engine seats",
+      "private snapshots require a bound seat capability and private event observers are denied",
+      "public snapshot, events, and export exclude steering guidance sentinels",
+      "browser copied quoted --path command joins without printing its ticket",
+      "sends protocol game.end once for natural completion, resignation, and decision deadline",
+      "terminal agent reconnect receives one game.end without re-emitting match terminal events",
+      "terminal emission sends one game.end when resignation races agent connection dispatch",
+      "ignores rejected engine search after a human terminal action",
+      "ignores stale engine results and failures after a human terminal action"
+    ]
+  },
+  "pgnFocused": {
+    "tests": 2,
+    "pass": 2,
+    "fail": 0,
+    "durationMs": 144.42175,
+    "names": [
+      "terminal lifecycle writes matching PGN result and termination headers",
+      "draw move completes lifecycle"
+    ]
+  },
+  "uiFocused": {
+    "tests": 3,
+    "pass": 3,
+    "fail": 0,
+    "durationMs": 85.139125,
+    "names": [
+      "quotes copied ticket paths for zsh argv parsing",
+      "suppresses npm script echo in copied ticket command",
+      "renders exact public trace disclosure source separate from transport actor"
+    ]
+  },
+  "browserHumanAgent": {
+    "matchId": "b81b4bae-bfe9-48c2-9000-930c7c083f63",
+    "setup": "API-created public match; human capability injected into controlled browser sessionStorage through one-shot loopback; agent capability retained by external connector harness",
+    "browserAcceptedMoves": 6,
+    "agentAcceptedMoves": 5,
+    "plies": 11,
+    "replayButtonsBeforeConnectorStop": 10,
+    "visibleCandidates": 5,
+    "agentTurnDisabledControls": 64,
+    "agentTurnEnabledControls": 0,
+    "humanizedProvenance": "Agent reported",
+    "rawProvenanceVisible": false,
+    "consoleErrors": 0,
+    "consoleWarnings": 0,
+    "capturedHumanMoveStatuses": [202, 202, 202, 202, 202],
+    "sixthHumanMoveAcceptedByFinalPlyState": true,
+    "spectatorGetStatus": 200,
+    "horizontalOverflow": false
+  }
+}

@@ -1,15 +1,13 @@
 # Task 8 Integration Report
 
-Status: PARTIAL — npm audit external-policy blocker
+Status: PASS — code hardening closure
 
-Validated code commit: `13414398a61883dcbd34dbc98e49a51f816bfb2e`
-
-## Task 8 outcome
+Validated hardening baseline: `f4698299eaba2f8f6920f31d40311b191581b1c5`
 
 Detailed evidence: `agent-chess-build-packet-v2/docs/validation/core-exhibition-validation.md`.
 
-Completed: 162/162 full suite; White/Black human 3-turn smokes; generic public-agent 3-turn smoke; tracked deterministic matrix; abort/resign/export/observer/spectator matrix; refreshed desktop/mobile/spectator evidence; tracked grid-geometry artifact. Orientation proof: Human Black mobile renders Computer/White/Engine above, Human/Black/Human below, Black home rank nearest; Human-v-agent turn renders Agent, not Engine, with 64 disabled controls.
+Baseline suite passed 179/179. Validation found two product defects: copied npm command echoed one-use ticket; disclosure UI rendered raw provenance enum. Both received literal RED→GREEN fixes. Final suite passed 180/180.
 
-Blocked: `npm audit --audit-level=high` external DNS/approval boundary. Real browser-created Human-vs-agent proof is incomplete: after UI move `e2e4`, 64 controls disabled on agent turn, but sandbox blocks retrieving browser-held agent capability from clipboard/session storage to start supported local connector. Promotion remains deterministic fixture proof. Do not accept next plan yet.
+Closure evidence: expanded public/private matrix; unauthorized private GET/export `401`; bound private GET `200`; private observer rejection; guidance sentinel absent from snapshot/WebSocket/export; exact quoted silent connector exits `0` without glob failure or secret output; terminal `game.end`/reconnect/race tests; no late `ENGINE_FAILURE`; PGN result/termination proof; engine metadata separation; real controlled-browser Human-v-agent match reached 10 plies, then 11th-ply agent-turn disabled proof; humanized provenance; refreshed screenshots.
 
-Current validation replaces prior checkpoint claims. See detailed report for all commands, evidence, limitations, and exact match IDs.
+Remaining evidence gaps: `npm audit` lacks external registry authorization; native touch promotion remains fixture-only; no real provider/model-strength evaluation. These are not open defects in requested hardening contracts.

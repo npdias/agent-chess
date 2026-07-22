@@ -27,6 +27,11 @@ test('quotes copied ticket paths for zsh argv parsing', () => {
   assert.equal(result.stdout.trim(), path);
 });
 
+test('suppresses npm script echo in copied ticket command', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(app, /npm run --silent connect -- --server/);
+});
+
 
 test('derives live and completed match summary states', () => {
   const live = deriveMatchSummary({
@@ -97,6 +102,9 @@ test('renders exact public trace disclosure source separate from transport actor
   });
   assert.equal(formatted.source, 'agent');
   assert.equal(formatted.disclosureSource, 'agent_reported');
+  assert.equal(formatted.disclosureLabel, 'Agent reported');
+  assert.equal(formatActivity({ type: 'agent.trace', source: 'provider_summary' }).disclosureLabel, 'Provider summary');
+  assert.equal(formatActivity({ type: 'agent.trace', source: 'adapter_generated' }).disclosureLabel, 'Adapter generated');
 });
 
 test('uses neutral labels for unknown trace phases instead of a waiting state', () => {

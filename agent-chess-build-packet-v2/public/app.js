@@ -49,6 +49,12 @@ const PHASE_ALIASES = {
   demo: 'evaluate',
 };
 
+const DISCLOSURE_LABELS = {
+  agent_reported: 'Agent reported',
+  provider_summary: 'Provider summary',
+  adapter_generated: 'Adapter generated',
+};
+
 export function deriveTurnPhase(match = {}) {
   if (match.game?.gameOver || ['completed', 'aborted', 'failed'].includes(match.status)) return { key: 'complete', label: 'Match complete' };
   const entries = activeTurnActivity(match);
@@ -96,7 +102,7 @@ export function formatActivity(entry = {}) {
     meta,
     detail: entry.summary?.trim() || entry.message?.trim() || fallback,
     source,
-    ...(['agent_reported', 'provider_summary', 'adapter_generated'].includes(entry.source) ? { disclosureSource: entry.source } : {}),
+    ...(DISCLOSURE_LABELS[entry.source] ? { disclosureSource: entry.source, disclosureLabel: DISCLOSURE_LABELS[entry.source] } : {}),
     candidates: Array.isArray(entry.candidates) ? entry.candidates.slice(0, 3) : [],
   };
 }
@@ -120,7 +126,7 @@ export function buildActivityEntry(doc, item) {
   const entry = doc.createElement('article');
   entry.className = `trace-entry ${formatted.source}`;
   const title = doc.createElement('strong');
-  title.textContent = `${formatted.disclosureSource ?? `${formatted.source[0].toUpperCase()}${formatted.source.slice(1)}`} · ${formatted.label}`;
+  title.textContent = `${formatted.disclosureLabel ?? `${formatted.source[0].toUpperCase()}${formatted.source.slice(1)}`} · ${formatted.label}`;
   entry.append(title);
   if (item.at) {
     const time = doc.createElement('small');
@@ -468,7 +474,7 @@ function boot() {
     const response = await fetch('/api/agent-sessions', { method: 'POST', headers: { authorization: `Bearer ${agentCapability}` } });
     if (!response.ok) return toast('Connector unavailable');
     const session = await response.json();
-    qs('connect-command').textContent = `npm run connect -- --server ${location.origin} --path ${shellQuote(session.wsPath)} --command ./your-agent`;
+    qs('connect-command').textContent = `npm run --silent connect -- --server ${location.origin} --path ${shellQuote(session.wsPath)} --command ./your-agent`;
     copyText(qs('connect-command').textContent, 'Connector command copied');
   });
   qs('copy-pgn').addEventListener('click', () => currentMatch?.pgn && copyText(currentMatch.pgn, 'PGN copied'));

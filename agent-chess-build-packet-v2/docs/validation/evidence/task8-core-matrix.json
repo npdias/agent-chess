@@ -1,6 +1,6 @@
 {
   "agent": {
-    "matchId": "f1e0013d-9d34-4612-a401-d58e4331b6f4",
+    "matchId": "a874a19c-7f0d-415d-84ef-46296af8d4b8",
     "plies": 12,
     "humanMoves": 6,
     "agentMoves": 6,
@@ -9,11 +9,42 @@
     "spectatorSubmitStatus": 401,
     "capabilityValueLeak": false,
     "capabilityNameLeak": false,
-    "pgnPresent": true
+    "pgnPresent": true,
+    "engineMetadataPresent": false
+  },
+  "privacy": {
+    "unauthorizedGetStatus": 401,
+    "boundGetStatus": 200,
+    "unauthorizedExportStatus": 401,
+    "privateEventsRejected": true
+  },
+  "guidance": {
+    "steeringStatus": 202,
+    "snapshotLeak": false,
+    "eventsLeak": false,
+    "exportLeak": false,
+    "activeTurnSteeringPresent": false,
+    "capabilityValueLeak": false
+  },
+  "connector": {
+    "commandShape": "npm run --silent connect -- --server '<server>' --path '<one-use-path>' --demo",
+    "connected": true,
+    "resignStatus": 202,
+    "terminalOutput": true,
+    "exitCode": 0,
+    "zshNoGlobFailure": true,
+    "capabilityValueLeak": false,
+    "ticketValueLeak": false,
+    "stderrEmpty": true
   },
   "lifecycle": {
     "abortStatus": 202,
+    "abortedPgnResult": true,
+    "abortedPgnTermination": true,
     "resignStatus": 202,
-    "exportStatus": 200
+    "exportStatus": 200,
+    "resignedPgnResult": true,
+    "resignedPgnTermination": true,
+    "engineMetadataPresent": true
   }
 }

@@ -6,6 +6,7 @@ import { Chess } from 'chess.js';
 import WebSocket from 'ws';
 import { createAgentChessServer } from '../src/server.js';
 import { runSmoke } from '../bin/smoke-human.js';
+import { shellQuote } from '../public/app.js';
 
 class FakeStockfish {
   async bestMove(fen) {
@@ -258,7 +259,7 @@ test('agent capability exchanges once for a sixty-second ticket', async () => {
   }
 });
 
-test('browser copied --path connector command joins through its already-exchanged ticket', async () => {
+test('browser copied quoted --path command joins without printing its ticket', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);
   try {
@@ -269,15 +270,18 @@ test('browser copied --path connector command joins through its already-exchange
     const ticket = await fetch(`${address.httpUrl}/api/agent-sessions`, {
       method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
     }).then((response) => response.json());
-    const child = spawn(process.execPath, ['bin/connect-agent.js', '--server', address.httpUrl, '--path', ticket.wsPath, '--demo'], {
+    const command = `npm run --silent connect -- --server ${shellQuote(address.httpUrl)} --path ${shellQuote(ticket.wsPath)} --demo`;
+    const child = spawn('/bin/zsh', ['-f', '-c', command], {
       cwd: new URL('..', import.meta.url),
     });
     let stdout = '';
+    let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('connector did not join')), 3000);
       const poll = () => {
-        if (stdout.includes('Connected to agent seat.')) { clearTimeout(timer); resolve(); }
+        if (stdout.includes('Accepted:')) { clearTimeout(timer); resolve(); }
         else setTimeout(poll, 10);
       };
       poll();
@@ -286,8 +290,12 @@ test('browser copied --path connector command joins through its already-exchange
       method: 'POST', headers: { authorization: `Bearer ${created.capabilities.black}` },
     });
     const [code] = await once(child, 'close');
-    assert.equal(code, 0);
+    assert.equal(code, 0, stderr);
     assert.match(stdout, /Game over:/);
+    assert.doesNotMatch(`${stdout}\n${stderr}`, /no matches found/);
+    assert.equal(`${stdout}\n${stderr}`.includes(ticket.ticket), false);
+    assert.equal(`${stdout}\n${stderr}`.includes(ticket.wsPath), false);
+    assert.equal(Object.values(created.capabilities).some((value) => `${stdout}\n${stderr}`.includes(value)), false);
   } finally {
     await server.stop();
   }
