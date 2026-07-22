@@ -1,5 +1,5 @@
 {
-  "validatedCodeCommit": "57de8fcf67270dcedea87d739ae7860d46d327cd",
+  "validatedCodeCommit": "be16937fcf2d45564467dd0f77df657fe020ebc0",
   "baselineSuite": {
     "tests": 179,
     "pass": 179,
@@ -13,25 +13,27 @@
     "durationMs": 2504.364292
   },
   "hardeningDFinalSuite": {
-    "tests": 189,
-    "pass": 189,
+    "tests": 191,
+    "pass": 191,
     "fail": 0,
-    "durationMs": 2747.679667
+    "durationMs": 3187.3595
   },
   "hardeningDFocused": {
-    "tests": 17,
-    "pass": 17,
+    "tests": 19,
+    "pass": 19,
     "fail": 0,
     "groups": {
-      "connectorProvenance": { "tests": 9, "pass": 9, "durationMs": 32.497082 },
-      "adapterStatus": { "tests": 1, "pass": 1, "durationMs": 17.878125 },
-      "uiDisclosure": { "tests": 2, "pass": 2, "durationMs": 1.060001 },
-      "terminalFailure": { "tests": 5, "pass": 5, "durationMs": 393.04675 }
+      "connectorProvenance": { "tests": 9, "pass": 9, "durationMs": 31.149457 },
+      "adapterStatus": { "tests": 1, "pass": 1, "durationMs": 20.191292 },
+      "connectorPrivacy": { "tests": 2, "pass": 2, "durationMs": 198.424459 },
+      "uiDisclosure": { "tests": 2, "pass": 2, "durationMs": 1.158459 },
+      "terminalFailure": { "tests": 5, "pass": 5, "durationMs": 374.476584 }
     },
     "assertions": {
       "preservedSources": ["agent_reported", "provider_summary", "adapter_generated"],
       "absentSourceDefaultsTo": "agent_reported",
-      "explicitUnsupportedSource": { "code": "INVALID_TRACE_SOURCE", "withoutSummary": true, "withEmptySummary": true, "reachesServerOrUi": false },
+      "explicitUnsupportedSource": { "code": "INVALID_TRACE_SOURCE", "withoutSummary": true, "withEmptySummary": true, "endToEndPublicLeak": false },
+      "connectorFailurePrivacy": { "publicSummary": "Agent connector failed.", "source": "adapter_generated", "localDiagnosticRetained": true, "snapshotLeak": false, "observerLeak": false, "exportLeak": false },
       "demoAndStatusSource": "adapter_generated",
       "uiAgentDecisionLabel": "Decision",
       "uiNonrecoverableFailureLabel": "Match failed",
@@ -54,6 +56,8 @@
       "sends protocol game.end once for natural completion, resignation, and decision deadline",
       "preserves provider summary provenance through connector protocol server and public snapshot",
       "reference connector exits nonzero after stable decision-deadline failure",
+      "reference connector keeps command stderr diagnostics local and publishes stable failure status",
+      "reference connector publishes stable failure when command returns invalid trace source",
       "reference connector exits nonzero on engine failure without raw diagnostics",
       "fails after an engine error and stores a visible nonrecoverable error",
       "labels connector status and visible engine errors without claiming agent authorship"

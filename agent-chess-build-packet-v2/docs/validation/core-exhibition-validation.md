@@ -2,9 +2,9 @@
 
 Status: **PASS — requested code-hardening contracts closed by current evidence.**
 
-Validated hardening baseline: `57de8fcf67270dcedea87d739ae7860d46d327cd`.
+Validated hardening baseline: `be16937fcf2d45564467dd0f77df657fe020ebc0`.
 
-Prior validation found two UI command/disclosure defects. Final bounded reviews additionally closed invalid connector source coercion, validation-order bypass, and stale terminal activity metadata; every finding has literal RED→GREEN coverage.
+Prior validation found two UI command/disclosure defects. Final bounded reviews additionally closed invalid connector source coercion, validation-order bypass, stale terminal activity metadata, and raw connector diagnostic publication; every finding has literal RED→GREEN coverage.
 
 ## Environment
 
@@ -16,8 +16,8 @@ Prior validation found two UI command/disclosure defects. Final bounded reviews 
 
 | Command | Result |
 | --- | --- |
-| `npm test` at Hardening D baseline `57de8fc` | PASS — 189 tests, 189 pass, 0 fail; 2747.679667 ms. |
-| Hardening D focused proof | PASS — 17/17; 483.600541 ms. Connector provenance 9/9; adapter status 1/1; UI disclosure/failure labels 2/2; terminal failure 5/5. |
+| `npm test` at Hardening D baseline `be16937` | PASS — 191 tests, 191 pass, 0 fail; 3187.3595 ms. |
+| Hardening D focused proof | PASS — 19/19; 670.883667 ms. Connector provenance 9/9; adapter status 1/1; connector privacy 2/2; UI disclosure/failure labels 2/2; terminal failure 5/5. |
 | Focused server hardening group | PASS — 9/9; 603.477 ms. Covers engine metadata separation, private auth/events, guidance suppression, quoted connector, terminal delivery/reconnect/race, engine resign races. |
 | Focused PGN group | PASS — 2/2; 144.42175 ms. Covers resignation/failure headers plus draw result/termination. |
 | Focused UI group | PASS — 3/3; 85.139125 ms. Covers zsh path quoting, npm echo suppression, humanized disclosure labels. |
@@ -33,6 +33,7 @@ Exact focused test names, counts, durations, browser summary: [task8-hardening-f
 ## Hardening D proof
 
 - Provenance: `agent_reported`, `provider_summary`, `adapter_generated` survive their intended connector/protocol paths; absent/null/empty command source defaults to `agent_reported`; explicit unsupported source fails locally with `INVALID_TRACE_SOURCE` before server/UI even when summary is absent/empty; demo moves plus precommit status use `adapter_generated`; provider summary reaches public snapshot unchanged.
+- Connector privacy: real child-command failures keep raw stderr and local paths only in connector stderr; observer events, public snapshot, and export receive only `Agent connector failed.` with `adapter_generated` provenance. Real invalid-source connector failure proves the unsupported value and diagnostic do not reach server/UI.
 - UI: committed `agent.decision` renders label `Decision` while disclosure provenance remains separate; real failed-match public activity persists `recoverable: false` and renders `Match failed`.
 - Decision deadline failure: `error` precedes `game.end`; terminal payload reports `status: failed`, `termination: failure`, `failureCode: AGENT_FAILURE`; reference connector exits `1`; raw `Decision deadline exceeded` diagnostic is absent.
 - Engine failure: `error` precedes `game.end`; terminal payload reports `status: failed`, `termination: failure`, `failureCode: ENGINE_FAILURE`; reference connector exits `1`; injected raw engine diagnostic is absent.
