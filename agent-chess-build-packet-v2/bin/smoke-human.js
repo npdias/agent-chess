@@ -68,6 +68,7 @@ export async function runSmoke({ server, color, turns }, fetchImpl = fetch) {
   }
   snapshot = await responseJson(await fetchImpl(`${server}/api/matches/${created.matchId}`));
   return {
+    humanTurns: turns,
     matchId: created.matchId,
     plies: snapshot.game.ply,
     result: snapshot.game.result,
@@ -78,7 +79,7 @@ export async function runSmoke({ server, color, turns }, fetchImpl = fetch) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   runSmoke(parseArgs(process.argv.slice(2))).then(
-    (result) => console.log(JSON.stringify(result)),
+    ({ humanTurns, ...result }) => console.log(JSON.stringify(result)),
     (error) => { console.error(error.message); process.exitCode = 1; },
   );
 }

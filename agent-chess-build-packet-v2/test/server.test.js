@@ -94,14 +94,16 @@ test('human White move is authenticated and followed by engine move', async () =
   }
 });
 
-test('human smoke completes deterministic legal exhibition plies', async () => {
+test('human smoke completes exact requested turns as White and Black', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);
   try {
-    const result = await runSmoke({ server: address.httpUrl, color: 'white', turns: 2 });
-    assert.equal(result.plies >= 3, true);
-    assert.equal(result.status, 'active');
-    assert.equal(result.exportUrl, `${address.httpUrl}/api/matches/${result.matchId}/export`);
+    for (const color of ['white', 'black']) {
+      const result = await runSmoke({ server: address.httpUrl, color, turns: 2 });
+      assert.equal(result.humanTurns, 2);
+      assert.equal(result.status, 'active');
+      assert.equal(result.exportUrl, `${address.httpUrl}/api/matches/${result.matchId}/export`);
+    }
   } finally {
     await server.stop();
   }

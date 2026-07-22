@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import WebSocket from 'ws';
-import { cacheProbe, chooseDemoAction, validateLocalCandidate } from '../src/connector.js';
+import { cacheProbe, chooseDemoAction, exchangeAgentSession, validateLocalCandidate } from '../src/connector.js';
 
 function arg(name, fallback) {
   const index = process.argv.indexOf(`--${name}`);
@@ -13,21 +13,24 @@ const created = await fetch(`${server}/api/matches`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({
-    agentName: 'Smoke Agent',
-    agentColor: 'white',
-    steeringMode: 'locked',
-    skillLevel: 0,
-    movetimeMs: 50,
+    mode: 'exhibition', visibility: 'public', steeringMode: 'locked',
+    seats: {
+      white: { kind: 'agent', name: 'Smoke Agent' },
+      black: { kind: 'engine', name: 'Stockfish' },
+    },
+    engine: { skillLevel: 0, movetimeMs: 50 },
   }),
 }).then(async (response) => {
   if (!response.ok) throw new Error(await response.text());
   return response.json();
 });
 
+const wsPath = await exchangeAgentSession(fetch, server, created.capabilities.white);
+const ticketUrl = new URL(wsPath, server);
 const wsUrl = new URL(server);
 wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-wsUrl.pathname = '/agent';
-wsUrl.search = new URLSearchParams({ token: created.seatToken }).toString();
+wsUrl.pathname = ticketUrl.pathname;
+wsUrl.search = ticketUrl.search;
 
 const socket = new WebSocket(wsUrl);
 let submitted = 0;
@@ -63,7 +66,10 @@ socket.on('message', async (raw) => {
     const action = chooseDemoAction(activeTurn);
     const candidate = validateLocalCandidate(activeTurn, action.moveUci);
     socket.send(JSON.stringify({ type: 'trace.publish', turnId: activeTurn.turnId, phase: 'choose', summary: `Smoke agent selecting ${candidate.moveUci}.` }));
-    socket.send(JSON.stringify({ type: 'move.submit', turnId: activeTurn.turnId, moveUci: candidate.moveUci }));
+    socket.send(JSON.stringify({
+      type: 'move.submit', turnId: activeTurn.turnId, moveUci: candidate.moveUci,
+      publicTrace: { ...candidate.trace, selectedMove: candidate.moveUci },
+    }));
     submitted += 1;
     return;
   }
