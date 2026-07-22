@@ -439,6 +439,33 @@ test('terminal agent reconnect receives one game.end without re-emitting match t
   }
 });
 
+test('terminal emission sends one game.end when resignation races agent connection dispatch', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const ticket = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.black}` },
+    }).then((response) => response.json());
+    const socket = new WebSocket(`${address.wsUrl}${ticket.wsPath}`);
+    const messages = collectMessages(socket);
+    await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+    await fetch(`${address.httpUrl}/api/matches/${created.matchId}/resign`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    });
+    await messages.next((message) => message.type === 'match.start');
+    await messages.next((message) => message.type === 'game.end');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(messages.count((message) => message.type === 'game.end'), 1);
+    socket.close();
+  } finally {
+    await server.stop();
+  }
+});
+
 test('ignores rejected engine search after a human terminal action', async () => {
   let rejectMove;
   const pendingMove = new Promise((resolve, reject) => { rejectMove = reject; });

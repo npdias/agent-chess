@@ -104,6 +104,7 @@ export function createAgentChessServer({
   const matches = new Map();
   const seatByToken = new Map();
   const seatByTicket = new Map();
+  const terminalDelivered = new WeakSet();
   const agentWss = new WebSocketServer({ noServer: true });
   const eventWss = new WebSocketServer({ noServer: true });
   let httpServer;
@@ -138,14 +139,20 @@ export function createAgentChessServer({
     return ended;
   }
 
+  function sendTerminal(socket, ended) {
+    if (terminalDelivered.has(socket)) return;
+    terminalDelivered.add(socket);
+    safeSend(socket, ended);
+  }
+
   function emitTerminal(record, socket = null) {
-    if (socket) safeSend(socket, terminalMessage(record));
+    const ended = terminalMessage(record);
+    if (socket) sendTerminal(socket, ended);
     if (record.terminalEmitted) return;
     record.terminalEmitted = true;
     clearDecisionDeadline(record);
     record.deadlineTurnId = null;
-    const ended = terminalMessage(record);
-    for (const socket of record.agentSockets.values()) safeSend(socket, ended);
+    for (const socket of record.agentSockets.values()) sendTerminal(socket, ended);
     broadcast(record, ended);
     broadcastState(record);
     closeEngine(record);
@@ -325,7 +332,7 @@ export function createAgentChessServer({
         agentColor: color,
       });
       broadcastState(record);
-      if (record.session.isTerminal()) return record.terminalEmitted ? emitTerminal(record, socket) : emitTerminal(record);
+      if (record.session.isTerminal()) return emitTerminal(record, socket);
       advance(record).catch(() => undefined);
     }, 0);
   });
