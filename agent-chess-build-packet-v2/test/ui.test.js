@@ -151,3 +151,17 @@ test('keeps phase ribbon and activity rail visible outside secondary tabs', asyn
   assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.player-identity,\s*\.player-meta\s*\{[^}]*min-width:\s*0/);
   assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.clock\s*\{[^}]*min-width:\s*0/);
 });
+
+test('uses a desktop height-density rule to keep the square board in one viewport', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+
+  assert.match(css, /@media \(min-width: 1021px\) and \(max-height: 1250px\)[\s\S]*?\.board\s*\{[^}]*width:\s*min\(100%,\s*calc\(100dvh\s*-\s*290px\)\)[^}]*aspect-ratio:\s*1/);
+  assert.match(css, /@media \(min-width: 1021px\) and \(max-height: 1250px\)[\s\S]*?\.phase-ribbon,\s*\.player-strip,\s*\.board-footer\s*\{[^}]*width:\s*min\(100%,\s*calc\(100dvh\s*-\s*290px\)\)/);
+});
+
+test('allows the local connector command to shrink on narrow screens', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+
+  assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.connector-actions\s*\{[^}]*min-width:\s*0/);
+  assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.connector-actions small\s*\{[^}]*min-width:\s*0/);
+});
