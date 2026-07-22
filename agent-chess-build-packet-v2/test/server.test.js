@@ -130,6 +130,34 @@ test('accepts an agent move, runs the opponent, and emits the next turn', async 
   }
 });
 
+test('pauses after an engine failure and stores a visible recoverable error', async () => {
+  let calls = 0;
+  const server = createAgentChessServer({ stockfishFactory: async () => ({
+    async bestMove() { calls += 1; throw new Error('engine unavailable'); }, close() {},
+  }) });
+  const address = await server.start(0);
+  try {
+    const created = await fetch(`${address.httpUrl}/api/matches`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentColor: 'white' }),
+    }).then((response) => response.json());
+    const agent = new WebSocket(`${address.wsUrl}/agent?token=${created.seatToken}`);
+    const messages = collectMessages(agent);
+    await new Promise((resolve) => agent.once('open', resolve));
+    await messages.next((message) => message.type === 'match.start');
+    const turn = await messages.next((message) => message.type === 'turn.start');
+    agent.send(JSON.stringify({ type: 'move.submit', turnId: turn.turnId, moveUci: 'e2e4' }));
+    const failure = await messages.next((message) => message.type === 'error' && message.code === 'ENGINE_FAILURE');
+    assert.equal(failure.recoverable, true);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const state = await fetch(`${address.httpUrl}/api/matches/${created.matchId}`).then((response) => response.json());
+    assert.equal(calls, 1);
+    assert.ok(state.activity.some((entry) => entry.type === 'error' && entry.summary === 'engine unavailable'));
+    agent.close();
+  } finally {
+    await server.stop();
+  }
+});
+
 test('broadcasts trace candidates in observer state', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fenToBoard, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, formatActivity, selectActivityEntries, buildActivityEntry } from '../public/app.js';
+import { fenToBoard, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry } from '../public/app.js';
 
 test('maps FEN piece placement into 64 board squares', () => {
   const board = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
@@ -68,6 +68,26 @@ test('shows an agent-working fallback without invented decision text', () => {
   const activity = formatActivity({ source: 'agent', type: 'agent.trace', phase: 'evaluate' });
   assert.equal(activity.label, 'Evaluate');
   assert.equal(activity.detail, 'Agent working');
+});
+
+test('labels connector status and visible engine errors without claiming agent authorship', () => {
+  assert.equal(formatActivity({ source: 'connector', type: 'agent.trace', phase: 'evaluate' }).source, 'connector');
+  assert.deepEqual(formatActivity({ source: 'system', type: 'error', message: 'Engine offline.' }), {
+    label: 'Match paused', meta: '', detail: 'Engine offline.', source: 'system', candidates: [],
+  });
+});
+
+test('only marks phase ribbon steps backed by current-turn activity', () => {
+  const match = {
+    activity: [
+      { type: 'turn.start', turnId: 'old', phase: 'observe' },
+      { type: 'agent.trace', turnId: 'old', source: 'agent', phase: 'choose' },
+      { type: 'turn.start', turnId: 'current', phase: 'observe' },
+      { type: 'agent.trace', turnId: 'current', source: 'agent', phase: 'evaluate' },
+    ],
+  };
+  assert.deepEqual(deriveTurnPhase(match), { key: 'evaluate', label: 'Evaluate' });
+  assert.deepEqual(derivePhaseEvidence(match), new Set(['observe', 'evaluate']));
 });
 
 test('retains queued steering when verified activity exists, newest first', () => {

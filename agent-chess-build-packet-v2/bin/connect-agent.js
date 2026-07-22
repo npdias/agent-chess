@@ -36,21 +36,28 @@ let busy = false;
 let activeTurn = null;
 let commandRounds = 0;
 
-function publish(turnId, phase, summary) {
-  socket.send(JSON.stringify({ type: 'trace.publish', turnId, phase, summary }));
+function publish(turnId, trace) {
+  socket.send(JSON.stringify({ type: 'trace.publish', turnId, ...trace }));
+}
+
+function fail(message) {
+  if (activeTurn) publish(activeTurn.turnId, { kind: 'status', phase: 'failed', summary: message });
+  console.error(`Agent failed: ${message}`);
+  process.exitCode = 1;
+  socket.close(1011, 'agent failure');
 }
 
 async function advanceAgent() {
   if (!activeTurn || busy) return;
-  if (commandRounds >= 4) throw new Error('AGENT_COMMAND_ROUND_LIMIT');
+  if (commandRounds >= 4) return fail('AGENT_COMMAND_ROUND_LIMIT');
   busy = true;
   try {
-    publish(activeTurn.turnId, 'evaluate', 'Evaluating local agent action.');
+    publish(activeTurn.turnId, { kind: 'status', phase: 'evaluate', summary: 'Evaluating local agent action.' });
     const action = args.command
       ? await runCommandAction(args.command, activeTurn)
       : chooseDemoAction(activeTurn);
     commandRounds += 1;
-    if (action.trace) publish(activeTurn.turnId, action.trace.phase, action.trace.summary);
+    if (action.trace) publish(activeTurn.turnId, { ...action.trace, kind: 'decision' });
     if (action.probeSquare) {
       if (activeTurn.probeResults?.[action.probeSquare]) throw new Error('REPEATED_PROBE');
       socket.send(JSON.stringify(createAgentRequest(activeTurn, action)));
@@ -62,7 +69,7 @@ async function advanceAgent() {
       return;
     }
     const candidate = validateLocalCandidate(activeTurn, action.moveUci);
-    publish(activeTurn.turnId, 'choose', `Submitting ${candidate.moveUci}.`);
+    publish(activeTurn.turnId, { kind: 'status', phase: 'choose', summary: `Submitting ${candidate.moveUci}.` });
     socket.send(JSON.stringify(createAgentRequest(activeTurn, candidate)));
   } finally {
     busy = false;
@@ -94,17 +101,21 @@ socket.on('message', async (raw) => {
   }
   if (message.type === 'move.rejected') {
     console.error(`Move rejected: ${message.message}`);
-    busy = false;
+    fail(`Move rejected: ${message.message}`);
+    return;
+  }
+  if (message.type === 'error') {
+    fail(`Server error: ${message.message}`);
     return;
   }
   if (message.type === 'moves.list.result' && activeTurn?.turnId === message.turnId) {
     activeTurn = cacheProbe(activeTurn, message);
-    advanceAgent().catch((error) => console.error(`Agent failed: ${error.message}`));
+    advanceAgent().catch((error) => fail(error.message));
     return;
   }
   if (message.type === 'moves.list_all.result' && activeTurn?.turnId === message.turnId) {
     activeTurn = cacheAllMoves(activeTurn, message);
-    advanceAgent().catch((error) => console.error(`Agent failed: ${error.message}`));
+    advanceAgent().catch((error) => fail(error.message));
     return;
   }
   if (message.type === 'game.end') {
@@ -116,5 +127,5 @@ socket.on('message', async (raw) => {
   if (message.type !== 'turn.start' || busy) return;
   activeTurn = { ...message, probeResults: {} };
   commandRounds = 0;
-  advanceAgent().catch((error) => console.error(`Agent failed: ${error.message}`));
+  advanceAgent().catch((error) => fail(error.message));
 });

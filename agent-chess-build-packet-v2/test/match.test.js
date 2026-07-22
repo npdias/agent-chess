@@ -7,14 +7,26 @@ test('locked matches reject steering', () => {
   assert.throws(() => match.queueSteering('Play aggressively'), /STEERING_LOCKED/);
 });
 
-test('trainer guidance appears on the next agent turn and is consumed once', () => {
+test('trainer guidance appears on the next agent turn and remains stable during replay', () => {
   const match = new MatchSession({ steeringMode: 'trainer', agentColor: 'white' });
   match.queueSteering('Control the center');
 
   const turn = match.createTurnPayload();
   assert.equal(turn.steering.mode, 'trainer');
   assert.equal(turn.steering.guidance, 'Control the center');
-  assert.equal(match.createTurnPayload().steering.guidance, null);
+  assert.equal(match.createTurnPayload().steering.guidance, 'Control the center');
+});
+
+test('replays an active turn unchanged and reserves newly queued guidance for its successor', () => {
+  const match = new MatchSession({ steeringMode: 'trainer', agentColor: 'white' });
+  match.queueSteering('Control the center');
+  const first = match.createTurnPayload();
+  match.queueSteering('Avoid exchanges');
+
+  assert.deepEqual(match.createTurnPayload(), first);
+  match.submitAgentMove({ turnId: first.turnId, moveUci: 'e2e4' });
+  match.submitOpponentMove('e7e5');
+  assert.equal(match.createTurnPayload().steering.guidance, 'Avoid exchanges');
 });
 
 test('records turn start activity once when recreating an active turn payload', () => {
@@ -58,6 +70,7 @@ test('stores only explicit structured trace summaries', () => {
   const turn = match.createTurnPayload();
   const entry = match.publishTrace({
     turnId: turn.turnId,
+    kind: 'decision',
     phase: 'planning',
     summary: 'Develop the kingside knight.',
   });
@@ -168,6 +181,12 @@ test('returns read-only history pages before supplied ply cursor', () => {
   assert.equal(match.game.snapshot().ply, 4);
 });
 
+test('returns an empty history page when limit is zero', () => {
+  const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
+  const turn = match.createTurnPayload();
+  assert.deepEqual(match.listHistory({ turnId: turn.turnId, limit: 0 }).moves, []);
+});
+
 test('rejects probes made after their turn accepts a move', () => {
   const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
   const turn = match.createTurnPayload();
@@ -184,6 +203,7 @@ test('sanitizes optional decision trace without fabricating agent activity', () 
   assert.equal(match.snapshot().activity.some((entry) => entry.source === 'agent'), false);
   const entry = match.publishTrace({
     turnId: turn.turnId,
+    kind: 'decision',
     phase: 'evaluate',
     summary: 'x'.repeat(501),
     candidates: [

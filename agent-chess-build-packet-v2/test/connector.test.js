@@ -25,6 +25,20 @@ test('parses JSON agent output with an optional trace summary', () => {
   assert.equal(parsed.trace.summary, 'Claim the center.');
 });
 
+test('preserves bounded structured decision trace fields from command output', () => {
+  const parsed = parseAgentOutput(JSON.stringify({
+    moveUci: 'e2e4',
+    trace: {
+      kind: 'decision', phase: 'choose', summary: 'Claim center.',
+      candidates: [{ uci: 'e2e4', note: 'Space.' }], selectedMove: 'e2e4',
+    },
+  }), turn);
+  assert.deepEqual(parsed.trace, {
+    kind: 'decision', phase: 'choose', summary: 'Claim center.',
+    candidates: [{ uci: 'e2e4', note: 'Space.' }], selectedMove: 'e2e4',
+  });
+});
+
 test('accepts a bare UCI move from a simple command harness', () => {
   assert.deepEqual(parseAgentOutput('g1f3\n', turn), { moveUci: 'g1f3', trace: null });
 });

@@ -76,8 +76,14 @@ export function parseClientMessage(raw) {
   }
 
   if (message.type === MESSAGE_TYPES.HISTORY_LIST) {
-    if (Number.isInteger(message.beforePly)) parsed.beforePly = message.beforePly;
-    if (Number.isInteger(message.limit)) parsed.limit = message.limit;
+    if ('beforePly' in message) {
+      if (!Number.isInteger(message.beforePly)) throw new Error('INVALID_HISTORY_CURSOR');
+      parsed.beforePly = message.beforePly;
+    }
+    if ('limit' in message) {
+      if (!Number.isInteger(message.limit)) throw new Error('INVALID_HISTORY_LIMIT');
+      parsed.limit = message.limit;
+    }
   }
 
   if (message.type === MESSAGE_TYPES.TRACE_PUBLISH) {

@@ -1,6 +1,6 @@
 # Agent Chess Progressive Agent Interface Specification
 
-**Status:** Implementation in progress; Task 8 final acceptance pending
+**Status:** Implemented and verified in POC v1.
 **Protocol:** `2.0`
 **Scope:** Agent-facing chess-state and move-selection interface
 

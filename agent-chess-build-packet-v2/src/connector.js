@@ -6,8 +6,14 @@ const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 function parseTrace(parsed) {
   if (!parsed.trace?.summary) return null;
   return {
+    kind: parsed.trace.kind === 'decision' ? 'decision' : 'status',
     phase: String(parsed.trace.phase ?? 'thinking').slice(0, 40),
     summary: String(parsed.trace.summary).slice(0, 1000),
+    candidates: Array.isArray(parsed.trace.candidates) ? parsed.trace.candidates
+      .filter((candidate) => UCI_PATTERN.test(String(candidate?.uci ?? '').trim()))
+      .slice(0, 3)
+      .map((candidate) => ({ uci: String(candidate.uci).trim(), note: String(candidate?.note ?? '').trim().slice(0, 160) })) : [],
+    selectedMove: UCI_PATTERN.test(String(parsed.trace.selectedMove ?? '').trim()) ? String(parsed.trace.selectedMove).trim() : null,
   };
 }
 

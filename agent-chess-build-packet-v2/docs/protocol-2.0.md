@@ -1,6 +1,6 @@
 # Agent Chess Protocol 2.0
 
-**Status:** Implemented wire contract, pending Task 8 final acceptance.
+**Status:** Implemented and verified in POC v1.
 **Transport:** JSON WebSocket messages. Agent seat: `ws://HOST/agent?token=SEAT_TOKEN`.
 **Rules authority:** `chess.js`; UCI is canonical move identifier.
 
@@ -121,7 +121,7 @@ Every request below needs active `turnId`. State change after accepted move inva
 }
 ```
 
-`trace.publish` broadcasts no direct reply; observers receive it plus updated `match.state`. Omitted `kind` becomes `status`; only literal `decision` remains `decision`. Omitted `phase` becomes `thinking`. Empty or absent summary rejects. Service trims `phase` to 40 chars, `summary` to 500 chars, candidates to 3, candidate notes to 160 chars. UCI format is lowercase `[a-h][1-8][a-h][1-8][qrbn]?`; trace UCI requires well-formed format, not legality.
+`trace.publish` broadcasts no direct reply; observers receive it plus updated `match.state`. Omitted `kind` becomes `status`; only literal `decision` remains `decision`. Decision entries are labeled `agent`; connector status entries are labeled `connector`. Omitted `phase` becomes `thinking`. Empty or absent summary rejects. Service trims `phase` to 40 chars, `summary` to 500 chars, candidates to 3, candidate notes to 160 chars. UCI format is lowercase `[a-h][1-8][a-h][1-8][qrbn]?`; trace UCI requires well-formed format, not legality.
 
 ## Stable rejections
 

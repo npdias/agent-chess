@@ -27,6 +27,7 @@ export class MatchSession {
     });
     this.pendingGuidance = null;
     this.currentTurnId = null;
+    this.currentTurnPayload = null;
     this.closedTurnIds = new Set();
     this.trace = [];
     this.activity = [];
@@ -44,7 +45,7 @@ export class MatchSession {
     if (!clean) throw new Error('EMPTY_TRACE');
     const entry = this._recordActivity({
       type: 'agent.trace',
-      source: 'agent',
+      source: kind === 'decision' ? 'agent' : 'connector',
       kind: kind === 'decision' ? 'decision' : 'status',
       phase,
       turnId,
@@ -68,29 +69,33 @@ export class MatchSession {
 
   createTurnPayload() {
     if (!this.isAgentTurn()) throw new Error('NOT_AGENT_TURN');
-    const isNewTurn = !this.currentTurnId;
-    if (isNewTurn) this.currentTurnId = randomUUID();
+    if (this.currentTurnPayload) return this.currentTurnPayload;
+    this.currentTurnId = randomUUID();
 
     const guidance = this.pendingGuidance;
     this.pendingGuidance = null;
 
-    const turn = this.game.buildTurnSnapshot({
+    const turn = this.currentTurnPayload = this.game.buildTurnSnapshot({
       gameId: this.id,
       turnId: this.currentTurnId,
       agentColor: this.agentColor,
       steering: { mode: this.steeringMode, guidance },
       deadline: null,
     });
-    if (isNewTurn) {
-      this._recordActivity({
-        type: 'turn.start',
-        source: 'system',
-        phase: 'observe',
-        turnId: turn.turnId,
-        summary: 'Position ready',
-      });
-    }
+    this._recordActivity({
+      type: 'turn.start',
+      source: 'system',
+      phase: 'observe',
+      turnId: turn.turnId,
+      summary: 'Position ready',
+    });
     return turn;
+  }
+
+  recordSystemError(message) {
+    return this._recordActivity({
+      type: 'error', source: 'system', summary: String(message ?? 'Match paused'),
+    });
   }
 
   submitAgentMove({ turnId, moveUci }) {
@@ -99,6 +104,7 @@ export class MatchSession {
     const applied = this.game.applyMove(moveUci);
     this.closedTurnIds.add(turnId);
     this.currentTurnId = null;
+    this.currentTurnPayload = null;
     this.trace.push({ type: 'agent.move', at: new Date().toISOString(), ...applied });
     this._recordActivity({
       type: 'move.submit',
@@ -164,7 +170,7 @@ export class MatchSession {
     const moves = this.game
       .getRecentMoves(ply)
       .filter((move) => move.ply < cursor)
-      .slice(-limit);
+      .slice(limit === 0 ? 0 : -limit);
     this._recordActivity({
       type: 'history.list',
       source: 'system',

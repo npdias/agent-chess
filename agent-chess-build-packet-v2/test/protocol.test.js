@@ -63,6 +63,15 @@ test('preserves normalized turn-scoped trace fields', () => {
   });
 });
 
+test('rejects supplied history fields that are not integers', () => {
+  for (const field of ['beforePly', 'limit']) {
+    assert.throws(
+      () => parseClientMessage(JSON.stringify({ type: 'history.list', turnId: 'turn-1', [field]: '2' })),
+      /INVALID_HISTORY_(CURSOR|LIMIT)/
+    );
+  }
+});
+
 test('rejects malformed trace candidate and selected UCI values', () => {
   for (const trace of [
     { candidates: [{ uci: 'e2e9', note: 'Invalid destination.' }] },

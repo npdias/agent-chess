@@ -49,14 +49,28 @@ const PHASE_ALIASES = {
 
 export function deriveTurnPhase(match = {}) {
   if (match.game?.gameOver) return { key: 'complete', label: 'Match complete' };
-  const entry = [...(match.activity ?? [])].reverse().find((item) => item?.phase);
+  const entries = activeTurnActivity(match);
+  const entry = [...entries].reverse().find((item) => item?.phase);
   const key = PHASE_ALIASES[entry?.phase] ?? entry?.phase;
   const phase = TURN_PHASES.find((item) => item.key === key);
   return phase ?? { key: 'waiting', label: 'Waiting for turn' };
 }
 
+function activeTurnActivity(match = {}) {
+  const activity = match.activity ?? [];
+  const turnId = [...activity].reverse().find((item) => item?.type === 'turn.start')?.turnId;
+  return turnId ? activity.filter((item) => item?.turnId === turnId) : activity;
+}
+
+export function derivePhaseEvidence(match = {}) {
+  return new Set(activeTurnActivity(match)
+    .map((item) => PHASE_ALIASES[item?.phase] ?? item?.phase)
+    .filter((key) => TURN_PHASES.some((phase) => phase.key === key)));
+}
+
 export function formatActivity(entry = {}) {
-  const agent = entry.source === 'agent' || entry.type === 'agent.trace';
+  const source = ['agent', 'connector', 'system'].includes(entry.source) ? entry.source : 'system';
+  const agent = source === 'agent';
   const typeLabels = {
     'turn.start': 'Position received',
     'moves.list': 'Piece moves checked',
@@ -66,15 +80,16 @@ export function formatActivity(entry = {}) {
     'move.submit': 'Move submitted',
     'opponent.move': 'Opponent moved',
     'steering.queued': 'Steering queued',
+    error: 'Match paused',
   };
   const count = Number.isFinite(entry.count) ? `${entry.count} legal move${entry.count === 1 ? '' : 's'}` : '';
   const meta = entry.type === 'moves.list' && entry.square && count ? `${entry.square} · ${count}` : entry.selectedMove ?? '';
-  const fallback = agent && entry.phase ? 'Agent working' : 'Verified system event';
+  const fallback = agent && entry.phase ? 'Agent working' : source === 'connector' ? 'Connector status' : 'Verified system event';
   return {
-    label: agent ? deriveTurnPhase({ activity: [entry] }).label : (typeLabels[entry.type] ?? 'System event'),
+    label: entry.type === 'agent.trace' ? deriveTurnPhase({ activity: [entry] }).label : (typeLabels[entry.type] ?? 'System event'),
     meta,
     detail: entry.summary?.trim() || entry.message?.trim() || fallback,
-    source: agent ? 'agent' : 'system',
+    source,
     candidates: Array.isArray(entry.candidates) ? entry.candidates.slice(0, 3) : [],
   };
 }
@@ -98,7 +113,7 @@ export function buildActivityEntry(doc, item) {
   const entry = doc.createElement('article');
   entry.className = `trace-entry ${formatted.source}`;
   const title = doc.createElement('strong');
-  title.textContent = `${formatted.source === 'agent' ? 'Agent' : 'System'} · ${formatted.label}`;
+  title.textContent = `${formatted.source[0].toUpperCase()}${formatted.source.slice(1)} · ${formatted.label}`;
   entry.append(title);
   if (item.at) {
     const time = doc.createElement('small');
@@ -244,12 +259,13 @@ function renderTrace(match) {
 
 function renderPhaseRibbon(match) {
   const current = deriveTurnPhase(match);
-  const currentIndex = TURN_PHASES.findIndex((phase) => phase.key === current.key);
+  const evidence = derivePhaseEvidence(match);
   qs('phase-current').textContent = current.label;
   qs('phase-ribbon').replaceChildren(...TURN_PHASES.map((phase, index) => {
     const item = document.createElement('li');
-    item.className = index < currentIndex ? 'complete' : phase.key === current.key ? 'current' : '';
-    item.innerHTML = `<span aria-hidden="true">${index < currentIndex ? '✓' : index + 1}</span><strong>${phase.label}</strong>`;
+    const complete = evidence.has(phase.key) && phase.key !== current.key;
+    item.className = complete ? 'complete' : phase.key === current.key ? 'current' : '';
+    item.innerHTML = `<span aria-hidden="true">${complete ? '✓' : index + 1}</span><strong>${phase.label}</strong>`;
     return item;
   }));
 }

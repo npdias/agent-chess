@@ -108,7 +108,7 @@ export function createAgentChessServer({
   }
 
   async function advance(record) {
-    if (record.advancing) return;
+    if (record.advancing || record.engineFailed) return;
     const state = record.session.game.snapshot();
     if (state.gameOver) {
       const ended = {
@@ -149,13 +149,16 @@ export function createAgentChessServer({
       broadcast(record, event);
       broadcastState(record);
     } catch (error) {
-      const event = { type: MESSAGE_TYPES.ERROR, code: 'ENGINE_FAILURE', message: error.message };
+      record.engineFailed = true;
+      record.session.recordSystemError(error.message);
+      const event = { type: MESSAGE_TYPES.ERROR, code: 'ENGINE_FAILURE', message: error.message, recoverable: true };
       safeSend(record.agentSocket, event);
       broadcast(record, event);
+      broadcastState(record);
     } finally {
       record.advancing = false;
     }
-    await advance(record);
+    if (!record.engineFailed) await advance(record);
   }
 
   agentWss.on('connection', (socket, request, record) => {
@@ -278,6 +281,7 @@ export function createAgentChessServer({
         agentSocket: null,
         observers: new Set(),
         advancing: false,
+        engineFailed: false,
       };
       matches.set(session.id, record);
       byToken.set(seatToken, record);
