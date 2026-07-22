@@ -8,4 +8,6 @@ Task 4: complete (commits 28ef1c6..2be3e54, review clean).
 Task 5: complete (commits 2be3e54..3ebf50c, review clean).
 Task 6: complete (commits 3ebf50c..9570b97, review clean).
 Task 7: complete (commits 9570b97..7c202b8, review clean).
-Task 8: automation complete (commit 5235e27, 75/75 tests, audit clean, two isolated-server smokes each 6 plies). Browser visual verification remains assigned to root.
+Task 8: complete (commits 7c202b8..4e88b96, automated review clean).
+Visual acceptance: complete at 87cbf19; 390px board 366x366, 1440px board 820x820, no overflow, review clean.
+Final verification: 77/77 tests, audit clean, two same-server smokes each 6 plies, HTTP 200 after both.
