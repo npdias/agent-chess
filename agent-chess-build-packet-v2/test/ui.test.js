@@ -55,6 +55,11 @@ test('labels completed matches without showing a live turn phase', () => {
   });
 });
 
+test('uses terminal lifecycle status without chess game-over', () => {
+  assert.equal(deriveTurnPhase({ status: 'failed', game: { gameOver: false } }).key, 'complete');
+  assert.equal(deriveMatchSummary({ status: 'aborted', termination: 'aborted', seats: {}, game: { gameOver: false, movesSan: [] } }).review, true);
+});
+
 test('formats system probe activity as compact verified metadata', () => {
   assert.equal(formatActivity({ source: 'system', type: 'moves.list', square: 'e2', count: 2 }).meta, 'e2 · 2 legal moves');
 });

@@ -91,15 +91,19 @@ export function materialSummary(initialFen, currentFen, perspective = 'white') {
   const initial = String(initialFen).split(' ')[0];
   const current = String(currentFen).split(' ')[0];
   const count = (fen, piece) => [...fen].filter((token) => token === piece).length;
-  const captured = [];
+  const missing = { white: {}, black: {} };
   let difference = 0;
   for (const [piece, value] of Object.entries(values)) {
     for (const color of ['white', 'black']) {
       const token = color === 'white' ? piece.toUpperCase() : piece;
-      const missing = Math.max(0, count(initial, token) - count(current, token));
-      if (missing) captured.push(`${color} ${piece === 'p' ? 'pawn' : ({ n: 'knight', b: 'bishop', r: 'rook', q: 'queen' }[piece])}`);
+      missing[color][piece] = Math.max(0, count(initial, token) - count(current, token));
     }
   }
+  for (const color of ['white', 'black']) {
+    const promoted = ['q', 'r', 'b', 'n'].reduce((sum, piece) => sum + Math.max(0, count(current, color === 'white' ? piece.toUpperCase() : piece) - count(initial, color === 'white' ? piece.toUpperCase() : piece)), 0);
+    missing[color].p = Math.max(0, missing[color].p - promoted);
+  }
+  const captured = Object.entries(missing).flatMap(([color, pieces]) => Object.entries(pieces).flatMap(([piece, amount]) => Array(amount).fill(`${color} ${piece === 'p' ? 'pawn' : ({ n: 'knight', b: 'bishop', r: 'rook', q: 'queen' }[piece])}`)));
   for (const [piece, value] of Object.entries(values)) {
     difference += (count(current, perspective === 'white' ? piece.toUpperCase() : piece) - count(current, perspective === 'white' ? piece : piece.toUpperCase())) * value;
   }

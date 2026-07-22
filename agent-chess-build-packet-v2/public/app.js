@@ -50,7 +50,7 @@ const PHASE_ALIASES = {
 };
 
 export function deriveTurnPhase(match = {}) {
-  if (match.game?.gameOver) return { key: 'complete', label: 'Match complete' };
+  if (match.game?.gameOver || ['completed', 'aborted', 'failed'].includes(match.status)) return { key: 'complete', label: 'Match complete' };
   const entries = activeTurnActivity(match);
   const entry = [...entries].reverse().find((item) => TURN_PHASES.some((phase) => (
     phase.key === (PHASE_ALIASES[item?.phase] ?? item?.phase)
@@ -317,9 +317,9 @@ function render(match) {
   qs('connection-small').textContent = summary.activeName;
   qs('engine').textContent = 'Unrated exhibition';
   qs('engine-inline').textContent = seats.black?.kind ?? '';
-  qs('match-title').textContent = match.game.gameOver ? summary.status : `${seats.white?.name ?? 'White'} vs ${seats.black?.name ?? 'Black'}`;
-  qs('turn-label').textContent = match.game.gameOver ? match.game.result : `${seats[match.game.turn]?.name ?? match.game.turn} to move`;
-  qs('engine-state').textContent = match.game.gameOver ? 'Finished' : 'No clock';
+  qs('match-title').textContent = summary.review ? summary.status : `${seats.white?.name ?? 'White'} vs ${seats.black?.name ?? 'Black'}`;
+  qs('turn-label').textContent = summary.review ? summary.resultLabel : `${seats[match.game.turn]?.name ?? match.game.turn} to move`;
+  qs('engine-state').textContent = summary.review ? 'Finished' : 'No clock';
   qs('agent-color').textContent = seats.white?.kind ?? '';
   qs('agent-name').textContent = seats.white?.name ?? 'White';
   qs('opponent-name').textContent = seats.black?.name ?? 'Black';
@@ -340,6 +340,7 @@ function render(match) {
   renderTrace(match);
   renderReview(match, summary);
   qs('connector').hidden = !Object.entries(seats).some(([color, seat]) => seat.kind === 'agent' && sessionStorage.getItem(`${match.id}:capability:${color}`));
+  qs('lifecycle-action').hidden = summary.review;
   qs('lifecycle-action').textContent = (match.game.movesSan?.length ?? 0) ? 'Resign' : 'Abort';
 }
 

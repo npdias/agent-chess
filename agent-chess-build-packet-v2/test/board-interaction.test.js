@@ -198,3 +198,15 @@ test('suppresses follow-up click after drag submission', () => {
   assert.deepEqual(consumeSuppressedClick(true), { handle: false, suppressed: false });
   assert.deepEqual(consumeSuppressedClick(false), { handle: true, suppressed: false });
 });
+
+test('marks resigned, aborted, and failed lifecycle states terminal without chess game-over', () => {
+  for (const [status, termination] of [['completed', 'resignation'], ['aborted', 'aborted'], ['failed', 'failure']]) {
+    assert.equal(deriveExhibitionSummary({ status, termination, seats: {}, game: { gameOver: false, movesSan: [] } }).review, true);
+  }
+});
+
+test('does not report promoted pawn as captured', () => {
+  const initial = '4k3/P7/8/8/8/8/8/4K3 w - - 0 1';
+  const promoted = 'Q3k3/8/8/8/8/8/8/4K3 b - - 0 1';
+  assert.deepEqual(materialSummary(initial, promoted, 'white').captured, []);
+});
