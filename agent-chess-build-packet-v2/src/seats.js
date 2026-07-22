@@ -33,6 +33,12 @@ export function validateSeatCombination(config) {
   const kinds = seatList.map((seat) => seat.kind);
   const humanCount = kinds.filter((kind) => kind === 'human').length;
 
+  if (config.visibility === 'public' && !config.compatibility) {
+    for (const seat of seatList) {
+      if (seat.kind === 'agent') seat.traceRequirement = 'structured_required';
+    }
+  }
+
   if (config.mode !== 'exhibition' || config.visibility !== 'public') return config;
 
   if (humanCount > 0 && humanCount !== 1) throw new Error('UNSUPPORTED_SEAT_COMBINATION');
@@ -44,11 +50,6 @@ export function validateSeatCombination(config) {
   ].some((pair) => pair.every((kind) => kinds.includes(kind)) && pair.length === kinds.length);
   if (!supported) throw new Error('UNSUPPORTED_SEAT_COMBINATION');
 
-  if (!config.compatibility) {
-    for (const seat of seatList) {
-      if (seat.kind === 'agent') seat.traceRequirement = 'structured_required';
-    }
-  }
   return config;
 }
 
@@ -89,9 +90,10 @@ export function activeSeatFor(gameTurn, seats) {
 }
 
 export function publicSeat(seat) {
-  return {
+  const result = {
     kind: seat.kind,
     name: seat.name,
-    traceRequirement: seat.traceRequirement,
   };
+  if (seat.kind === 'agent') result.traceRequirement = seat.traceRequirement;
+  return result;
 }

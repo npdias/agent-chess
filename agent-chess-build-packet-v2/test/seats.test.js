@@ -60,9 +60,28 @@ test('returns only public seat fields', () => {
   });
 });
 
+test('omits trace requirement from public non-agent seats', () => {
+  assert.deepEqual(publicSeat({
+    kind: 'engine', name: 'Stockfish', traceRequirement: null,
+  }), {
+    kind: 'engine', name: 'Stockfish',
+  });
+});
+
 test('requires one human in public exhibition when human participates', () => {
   assert.throws(() => validateSeatCombination({
     mode: 'exhibition', visibility: 'public', compatibility: null,
     seats: { white: { kind: 'human' }, black: { kind: 'human' } },
   }), /UNSUPPORTED_SEAT_COMBINATION/);
+});
+
+test('requires structured traces for public private-eval agent seats', () => {
+  const config = normalizeMatchConfig({
+    mode: 'private_eval', visibility: 'public',
+    seats: {
+      white: { kind: 'agent', name: 'Public Agent', traceRequirement: 'optional' },
+      black: { kind: 'engine', name: 'Stockfish' },
+    },
+  });
+  assert.equal(config.seats.white.traceRequirement, 'structured_required');
 });
