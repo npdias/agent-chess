@@ -183,8 +183,11 @@ test('returns read-only history pages before supplied ply cursor', () => {
 
 test('returns an empty history page when limit is zero', () => {
   const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
-  const turn = match.createTurnPayload();
-  assert.deepEqual(match.listHistory({ turnId: turn.turnId, limit: 0 }).moves, []);
+  const first = match.createTurnPayload();
+  match.submitAgentMove({ turnId: first.turnId, moveUci: 'e2e4' });
+  match.submitOpponentMove('e7e5');
+  const second = match.createTurnPayload();
+  assert.deepEqual(match.listHistory({ turnId: second.turnId, limit: 0 }).moves, []);
 });
 
 test('rejects probes made after their turn accepts a move', () => {

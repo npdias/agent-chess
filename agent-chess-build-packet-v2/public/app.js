@@ -50,7 +50,9 @@ const PHASE_ALIASES = {
 export function deriveTurnPhase(match = {}) {
   if (match.game?.gameOver) return { key: 'complete', label: 'Match complete' };
   const entries = activeTurnActivity(match);
-  const entry = [...entries].reverse().find((item) => item?.phase);
+  const entry = [...entries].reverse().find((item) => TURN_PHASES.some((phase) => (
+    phase.key === (PHASE_ALIASES[item?.phase] ?? item?.phase)
+  )));
   const key = PHASE_ALIASES[entry?.phase] ?? entry?.phase;
   const phase = TURN_PHASES.find((item) => item.key === key);
   return phase ?? { key: 'waiting', label: 'Waiting for turn' };

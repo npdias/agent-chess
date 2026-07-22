@@ -167,10 +167,10 @@ export class MatchSession {
     const cursor = beforePly ?? ply + 1;
     if (!Number.isInteger(cursor) || cursor < 1) throw new Error('INVALID_HISTORY_CURSOR');
     if (!Number.isInteger(limit) || limit < 0) throw new Error('INVALID_HISTORY_LIMIT');
-    const moves = this.game
+    const moves = limit === 0 ? [] : this.game
       .getRecentMoves(ply)
       .filter((move) => move.ply < cursor)
-      .slice(limit === 0 ? 0 : -limit);
+      .slice(-limit);
     this._recordActivity({
       type: 'history.list',
       source: 'system',

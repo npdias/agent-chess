@@ -90,6 +90,13 @@ test('only marks phase ribbon steps backed by current-turn activity', () => {
   assert.deepEqual(derivePhaseEvidence(match), new Set(['observe', 'evaluate']));
 });
 
+test('keeps last verified phase when a later connector failure has no phase mapping', () => {
+  assert.deepEqual(deriveTurnPhase({ activity: [
+    { type: 'turn.start', turnId: 'current', phase: 'observe' },
+    { type: 'agent.trace', turnId: 'current', source: 'connector', phase: 'failed', summary: 'Connector stopped.' },
+  ] }), { key: 'observe', label: 'Observe' });
+});
+
 test('retains queued steering when verified activity exists, newest first', () => {
   const entries = selectActivityEntries({
     activity: [{ type: 'moves.list', source: 'system', at: '2026-07-21T12:00:00.000Z' }],
