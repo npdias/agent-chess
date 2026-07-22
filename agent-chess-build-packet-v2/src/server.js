@@ -65,7 +65,8 @@ function safeSend(socket, message) {
 function publicSnapshot(record) {
   return {
     ...record.session.snapshot(),
-    connected: record.agentSocket?.readyState === WebSocket.OPEN,
+    activeTurn: record.session.activeTurn(),
+    connected: [...record.agentSockets.values()].some((socket) => socket?.readyState === WebSocket.OPEN),
     engine: {
       name: 'Stockfish 18 Lite',
       skillLevel: record.skillLevel,
@@ -88,15 +89,44 @@ export function createAgentChessServer({
   publicDir = PUBLIC_DIR,
 } = {}) {
   const matches = new Map();
-  const byToken = new Map();
+  const seatByToken = new Map();
+  const seatByTicket = new Map();
   const agentWss = new WebSocketServer({ noServer: true });
   const eventWss = new WebSocketServer({ noServer: true });
   let httpServer;
-  let sharedEnginePromise;
+  function bearer(request) {
+    const value = request.headers.authorization;
+    return typeof value === 'string' && /^Bearer .+$/i.test(value) ? value.slice(7) : null;
+  }
 
-  function getSharedEngine(options) {
-    if (!sharedEnginePromise) sharedEnginePromise = stockfishFactory(options);
-    return sharedEnginePromise;
+  function seatForToken(request, record, kind) {
+    const seat = seatByToken.get(bearer(request));
+    return seat?.record === record && seat.kind === kind ? seat : null;
+  }
+
+  function closeEngine(record) {
+    if (!record.engine || record.engineClosed) return;
+    record.engineClosed = true;
+    record.engine.close();
+  }
+
+  function clearDecisionDeadline(record) {
+    if (record.decisionTimer) clearTimeout(record.decisionTimer);
+    record.decisionTimer = null;
+  }
+
+  function armDecisionDeadline(record, turn) {
+    clearDecisionDeadline(record);
+    if (!record.decisionDeadlineMs) return;
+    const expiresAt = Date.now() + record.decisionDeadlineMs;
+    turn.deadline = new Date(expiresAt).toISOString();
+    turn.deadlineMs = record.decisionDeadlineMs;
+    record.decisionTimer = setTimeout(() => {
+      if (record.session.activeTurn()?.turnId !== turn.turnId || record.session.isTerminal()) return;
+      record.session.fail('AGENT_FAILURE', 'Decision deadline exceeded');
+      broadcastState(record);
+      closeEngine(record);
+    }, record.decisionDeadlineMs);
   }
 
   function broadcast(record, message) {
@@ -108,7 +138,7 @@ export function createAgentChessServer({
   }
 
   async function advance(record) {
-    if (record.advancing || record.engineFailed) return;
+    if (record.advancing || record.engineFailed || record.session.isTerminal()) return;
     const state = record.session.game.snapshot();
     if (state.gameOver) {
       const ended = {
@@ -117,42 +147,45 @@ export function createAgentChessServer({
         result: state.result,
         pgn: record.session.game.pgn(),
       };
-      safeSend(record.agentSocket, ended);
+      for (const socket of record.agentSockets.values()) safeSend(socket, ended);
       broadcast(record, ended);
+      broadcastState(record);
+      closeEngine(record);
+      return;
+    }
+    const seat = record.session.activeSeat();
+    if (seat.kind === 'human') {
+      record.session.createTurnPayload();
       broadcastState(record);
       return;
     }
-
-    if (record.session.isAgentTurn()) {
-      if (record.agentSocket?.readyState === WebSocket.OPEN) {
-        safeSend(record.agentSocket, record.session.createTurnPayload());
-      }
+    if (seat.kind === 'agent') {
+      const turn = record.session.createTurnPayload();
+      armDecisionDeadline(record, turn);
+      safeSend(record.agentSockets.get(seat.color), turn);
       broadcastState(record);
       return;
     }
 
     record.advancing = true;
     try {
-      const before = record.session.game.snapshot();
-      const moveUci = await record.engine.bestMove(before.fen, {
-        movetimeMs: record.movetimeMs,
-        skillLevel: record.skillLevel,
-      });
-      const applied = record.session.submitOpponentMove(moveUci);
+      const turn = record.session.createTurnPayload();
+      const moveUci = await record.engine.bestMove(turn.fen, record.engineConfig);
+      const applied = record.session.submitSeatMove({ color: seat.color, turnId: turn.turnId, moveUci });
       const event = {
         type: MESSAGE_TYPES.OPPONENT_MOVE,
         matchId: record.session.id,
         moveUci: applied.uci,
         moveSan: applied.san,
       };
-      safeSend(record.agentSocket, event);
+      for (const socket of record.agentSockets.values()) safeSend(socket, event);
       broadcast(record, event);
       broadcastState(record);
     } catch (error) {
       record.engineFailed = true;
       record.session.recordSystemError(error.message);
       const event = { type: MESSAGE_TYPES.ERROR, code: 'ENGINE_FAILURE', message: error.message, recoverable: true };
-      safeSend(record.agentSocket, event);
+      for (const socket of record.agentSockets.values()) safeSend(socket, event);
       broadcast(record, event);
       broadcastState(record);
     } finally {
@@ -161,17 +194,21 @@ export function createAgentChessServer({
     if (!record.engineFailed) await advance(record);
   }
 
-  agentWss.on('connection', (socket, request, record) => {
-    if (record.agentSocket?.readyState === WebSocket.OPEN) record.agentSocket.close(4001, 'seat replaced');
-    record.agentSocket = socket;
+  agentWss.on('connection', (socket, request, binding) => {
+    const { record, color } = binding;
+    const oldSocket = record.agentSockets.get(color);
+    if (oldSocket?.readyState === WebSocket.OPEN) oldSocket.close(4001, 'seat replaced');
+    record.agentSockets.set(color, socket);
     socket.on('close', () => {
-      if (record.agentSocket === socket) record.agentSocket = null;
+      if (record.agentSockets.get(color) === socket) record.agentSockets.delete(color);
       broadcastState(record);
     });
     socket.on('message', async (raw) => {
       let message;
       try {
         message = parseClientMessage(raw);
+        const active = record.session.activeSeat();
+        if (active.kind !== 'agent' || active.color !== color) throw new Error('SEAT_NOT_ACTIVE');
         switch (message.type) {
           case MESSAGE_TYPES.MOVES_LIST: {
             const result = record.session.listMovesForPiece(message);
@@ -213,6 +250,7 @@ export function createAgentChessServer({
           }
           case MESSAGE_TYPES.MOVE_SUBMIT: {
             const applied = record.session.submitAgentMove(message);
+            clearDecisionDeadline(record);
             const accepted = {
               type: MESSAGE_TYPES.MOVE_ACCEPTED,
               matchId: record.session.id,
@@ -244,7 +282,7 @@ export function createAgentChessServer({
         type: MESSAGE_TYPES.MATCH_START,
         matchId: record.session.id,
         steeringMode: record.session.steeringMode,
-        agentColor: record.session.agentColor,
+        agentColor: color,
       });
       broadcastState(record);
       advance(record).catch(() => undefined);
@@ -260,37 +298,62 @@ export function createAgentChessServer({
   async function handleApi(request, response, url) {
     if (request.method === 'POST' && url.pathname === '/api/matches') {
       const body = await readJson(request);
-      const steeringMode = body.steeringMode ?? 'locked';
-      const agentColor = body.agentColor ?? 'white';
-      const skillLevel = Math.max(0, Math.min(20, Number(body.skillLevel ?? 5)));
-      const movetimeMs = Math.max(25, Math.min(5000, Number(body.movetimeMs ?? 150)));
       const session = new MatchSession({
-        steeringMode,
-        agentColor,
-        agentName: String(body.agentName ?? 'Local Agent').slice(0, 80),
-        opponentName: `Stockfish (skill ${skillLevel})`,
+        ...body,
       });
-      const seatToken = randomBytes(24).toString('base64url');
-      const engine = await getSharedEngine({ skillLevel, movetimeMs });
+      const legacy = Boolean(session.compatibility);
+      const engineConfig = {
+        movetimeMs: session.engine.movetimeMs,
+        skillLevel: session.engine.skillLevel,
+      };
+      const hasEngine = Object.values(session.seats).some((seat) => seat.kind === 'engine');
+      const engine = hasEngine ? await stockfishFactory(engineConfig) : null;
       const record = {
         session,
-        seatToken,
         engine,
-        skillLevel,
-        movetimeMs,
-        agentSocket: null,
+        engineConfig,
+        skillLevel: engineConfig.skillLevel,
+        movetimeMs: engineConfig.movetimeMs,
+        legacy,
+        agentSockets: new Map(),
         observers: new Set(),
         advancing: false,
         engineFailed: false,
+        engineClosed: false,
+        decisionDeadlineMs: Number.isInteger(body.decisionDeadlineMs) && body.decisionDeadlineMs > 0
+          ? Math.min(body.decisionDeadlineMs, 300_000) : null,
+        decisionTimer: null,
       };
       matches.set(session.id, record);
-      byToken.set(seatToken, record);
-      sendJson(response, 201, {
+      const capabilities = {};
+      for (const [color, seat] of Object.entries(session.seats)) {
+        if (!['human', 'agent'].includes(seat.kind)) continue;
+        const capability = randomBytes(24).toString('base64url');
+        seatByToken.set(capability, { record, color, kind: seat.kind });
+        capabilities[seat.kind] = capability;
+      }
+      const created = {
         matchId: session.id,
-        seatToken,
-        agentWsPath: `/agent?token=${encodeURIComponent(seatToken)}`,
+        capabilities,
         uiPath: `/?match=${encodeURIComponent(session.id)}`,
-      });
+      };
+      if (legacy) {
+        const seatToken = capabilities.agent;
+        created.seatToken = seatToken;
+        created.agentWsPath = `/agent?token=${encodeURIComponent(seatToken)}`;
+      }
+      sendJson(response, 201, created);
+      advance(record).catch(() => undefined);
+      return true;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/agent-sessions') {
+      const binding = seatByToken.get(bearer(request));
+      if (!binding || binding.kind !== 'agent') return sendJson(response, 401, { error: 'UNAUTHORIZED' }), true;
+      const ticket = randomBytes(24).toString('base64url');
+      const expiresAt = new Date(Date.now() + 60_000);
+      seatByTicket.set(ticket, { ...binding, expiresAt: expiresAt.getTime() });
+      sendJson(response, 201, { ticket, wsPath: `/agent?ticket=${encodeURIComponent(ticket)}`, expiresAt: expiresAt.toISOString() });
       return true;
     }
 
@@ -299,6 +362,52 @@ export function createAgentChessServer({
       const record = matches.get(decodeURIComponent(matchRoute[1]));
       if (!record) return sendJson(response, 404, { error: 'MATCH_NOT_FOUND' }), true;
       sendJson(response, 200, publicSnapshot(record));
+      return true;
+    }
+
+    const exportRoute = url.pathname.match(/^\/api\/matches\/([^/]+)\/export$/);
+    if (request.method === 'GET' && exportRoute) {
+      const record = matches.get(decodeURIComponent(exportRoute[1]));
+      if (!record) return sendJson(response, 404, { error: 'MATCH_NOT_FOUND' }), true;
+      if (record.session.visibility === 'private' && !seatForToken(request, record, 'human') && !seatForToken(request, record, 'agent')) {
+        return sendJson(response, 401, { error: 'UNAUTHORIZED' }), true;
+      }
+      sendJson(response, 200, {
+        ...record.session.exportRecord(),
+        engine: { name: 'Stockfish 18 Lite', skillLevel: record.skillLevel, movetimeMs: record.movetimeMs },
+        protocolVersion: '2.0',
+      });
+      return true;
+    }
+
+    const humanRoute = url.pathname.match(/^\/api\/matches\/([^/]+)\/human-moves$/);
+    const matchActionRoute = url.pathname.match(/^\/api\/matches\/([^/]+)\/(resign|abort)$/);
+    if ((request.method === 'POST' && humanRoute) || (request.method === 'POST' && matchActionRoute)) {
+      const matchId = decodeURIComponent((humanRoute ?? matchActionRoute)[1]);
+      const record = matches.get(matchId);
+      if (!record) return sendJson(response, 404, { error: 'MATCH_NOT_FOUND' }), true;
+      const seat = seatForToken(request, record, 'human');
+      if (!seat) return sendJson(response, 401, { error: 'UNAUTHORIZED' }), true;
+      try {
+        if (humanRoute) {
+          const body = await readJson(request);
+          const applied = record.session.submitSeatMove({ color: seat.color, turnId: body.turnId, moveUci: body.moveUci });
+          clearDecisionDeadline(record);
+          broadcastState(record);
+          sendJson(response, 202, { accepted: true, moveUci: applied.uci, moveSan: applied.san });
+          await advance(record);
+        } else {
+          const action = matchActionRoute[2];
+          const result = action === 'resign' ? record.session.resign(seat.color) : record.session.abort(seat.color);
+          clearDecisionDeadline(record);
+          broadcastState(record);
+          closeEngine(record);
+          sendJson(response, 202, { accepted: true, ...result });
+        }
+      } catch (error) {
+        const code = errorCode(error);
+        sendJson(response, code === 'STALE_TURN' || code === 'SEAT_NOT_ACTIVE' || code === 'ABORT_NOT_ALLOWED' ? 409 : 400, { accepted: false, error: code });
+      }
       return true;
     }
 
@@ -353,10 +462,19 @@ export function createAgentChessServer({
       httpServer.on('upgrade', (request, socket, head) => {
         const url = new URL(request.url, `http://${request.headers.host ?? 'localhost'}`);
         if (url.pathname === '/agent') {
-          const record = byToken.get(url.searchParams.get('token'));
-          if (!record) return socket.destroy();
+          let binding;
+          const ticket = url.searchParams.get('ticket');
+          if (ticket) {
+            binding = seatByTicket.get(ticket);
+            seatByTicket.delete(ticket);
+            if (!binding || binding.expiresAt < Date.now()) return socket.destroy();
+          } else {
+            const legacyToken = url.searchParams.get('token');
+            binding = seatByToken.get(legacyToken);
+            if (!binding || !binding.record.legacy || binding.kind !== 'agent') return socket.destroy();
+          }
           agentWss.handleUpgrade(request, socket, head, (ws) => {
-            agentWss.emit('connection', ws, request, record);
+            agentWss.emit('connection', ws, request, binding);
           });
           return;
         }
@@ -387,9 +505,10 @@ export function createAgentChessServer({
     async stop() {
       const engines = new Set();
       for (const record of matches.values()) {
-        record.agentSocket?.close();
+        clearDecisionDeadline(record);
+        for (const socket of record.agentSockets.values()) socket.close();
         for (const observer of record.observers) observer.close();
-        engines.add(record.engine);
+        if (record.engine) engines.add(record.engine);
       }
       for (const engine of engines) engine.close();
       agentWss.close();

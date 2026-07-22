@@ -44,6 +44,104 @@ function collectMessages(socket) {
   };
 }
 
+async function createMatch(address, body) {
+  const response = await fetch(`${address.httpUrl}/api/matches`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  assert.equal(response.status, 201);
+  return response.json();
+}
+
+async function getMatch(address, matchId) {
+  const response = await fetch(`${address.httpUrl}/api/matches/${matchId}`);
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+async function waitForPly(address, matchId, ply, timeoutMs = 3000) {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    const state = await getMatch(address, matchId);
+    if (state.game.ply >= ply) return state;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`ply ${ply} timeout`);
+}
+
+test('human White move is authenticated and followed by engine move', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'engine', name: 'Engine' } },
+    });
+    assert.ok(created.capabilities.human);
+    const state = await getMatch(address, created.matchId);
+    const response = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/human-moves`, {
+      method: 'POST', headers: {
+        authorization: `Bearer ${created.capabilities.human}`,
+        'content-type': 'application/json',
+      }, body: JSON.stringify({ turnId: state.activeTurn.turnId, moveUci: 'e2e4' }),
+    });
+    assert.equal(response.status, 202);
+    await waitForPly(address, created.matchId, 2);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('generic creation keeps capabilities out of public snapshots and export', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const snapshot = await getMatch(address, created.matchId);
+    const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`).then((response) => response.json());
+    const publicData = JSON.stringify({ snapshot, exported });
+    assert.equal(publicData.includes(created.capabilities.human), false);
+    assert.equal(publicData.includes(created.capabilities.agent), false);
+    assert.equal(publicData.includes('seatToken'), false);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('agent capability exchanges once for a sixty-second ticket', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const exchange = async () => fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.agent}` },
+    });
+    const ticketResponse = await exchange();
+    assert.equal(ticketResponse.status, 201);
+    const ticket = await ticketResponse.json();
+    assert.match(ticket.ticket, /.+/);
+    assert.match(ticket.wsPath, /^\/agent\?ticket=/);
+    assert.ok(Date.parse(ticket.expiresAt) - Date.now() <= 60_000);
+    const first = new WebSocket(`${address.wsUrl}${ticket.wsPath}`);
+    await new Promise((resolve, reject) => { first.once('open', resolve); first.once('error', reject); });
+    const reused = new WebSocket(`${address.wsUrl}${ticket.wsPath}`);
+    await new Promise((resolve) => {
+      reused.once('close', resolve);
+      reused.once('error', resolve);
+    });
+    first.close();
+  } finally {
+    await server.stop();
+  }
+});
+
 test('sends a compact protocol 2.0 turn and routes probes to its authenticated seat', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);
@@ -217,7 +315,7 @@ test('broadcasts trace candidates in observer state', async () => {
   }
 });
 
-test('reuses one queued engine instance across multiple matches', async () => {
+test('owns one engine instance per match', async () => {
   let starts = 0;
   const server = createAgentChessServer({
     stockfishFactory: async () => {
@@ -236,7 +334,7 @@ test('reuses one queued engine instance across multiple matches', async () => {
       });
       assert.equal(response.status, 201);
     }
-    assert.equal(starts, 1);
+    assert.equal(starts, 2);
   } finally {
     await server.stop();
   }

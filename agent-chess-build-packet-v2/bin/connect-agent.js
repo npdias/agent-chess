@@ -17,12 +17,25 @@ function parseArgs(argv) {
   return args;
 }
 
-function toWsUrl(server, seat) {
+function toWsUrl(server, wsPath) {
   const url = new URL(server);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.pathname = '/agent';
-  url.search = new URLSearchParams({ token: seat }).toString();
+  const target = new URL(wsPath, server);
+  url.pathname = target.pathname;
+  url.search = target.search;
   return url.toString();
+}
+
+async function exchangeAgentSession(server, capability) {
+  const response = await fetch(new URL('/api/agent-sessions', server), {
+    method: 'POST', headers: { authorization: `Bearer ${capability}` },
+  });
+  if (!response.ok) throw new Error(`AGENT_SESSION_FAILED_${response.status}`);
+  const session = await response.json();
+  if (typeof session?.wsPath !== 'string' || !session.wsPath.startsWith('/agent?ticket=')) {
+    throw new Error('INVALID_AGENT_SESSION');
+  }
+  return session.wsPath;
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -31,7 +44,14 @@ if (!args.server || !args.seat || (!args.command && !args.demo)) {
   process.exit(2);
 }
 
-const socket = new WebSocket(toWsUrl(args.server, args.seat));
+let wsPath;
+try {
+  wsPath = await exchangeAgentSession(args.server, args.seat);
+} catch (error) {
+  console.error(`Connection failed: ${error.message}`);
+  process.exit(1);
+}
+const socket = new WebSocket(toWsUrl(args.server, wsPath));
 let busy = false;
 let activeTurn = null;
 let commandRounds = 0;
