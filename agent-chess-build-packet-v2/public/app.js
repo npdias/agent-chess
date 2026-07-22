@@ -48,6 +48,7 @@ const PHASE_ALIASES = {
 };
 
 export function deriveTurnPhase(match = {}) {
+  if (match.game?.gameOver) return { key: 'complete', label: 'Match complete' };
   const entry = [...(match.activity ?? [])].reverse().find((item) => item?.phase);
   const key = PHASE_ALIASES[entry?.phase] ?? entry?.phase;
   const phase = TURN_PHASES.find((item) => item.key === key);
@@ -80,7 +81,9 @@ export function formatActivity(entry = {}) {
 
 export function selectActivityEntries(match = {}) {
   const seen = new Set();
-  return [...(match.activity ?? []), ...(match.trace ?? [])]
+  const activity = match.activity ?? [];
+  const trace = activity.length ? (match.trace ?? []).filter((entry) => entry.type === 'steering.queued') : match.trace ?? [];
+  return [...activity, ...trace]
     .filter((entry) => {
       const key = [entry.type, entry.source, entry.at, entry.phase, entry.summary, entry.message, entry.uci, entry.san].join('\u0000');
       if (seen.has(key)) return false;

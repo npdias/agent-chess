@@ -54,6 +54,12 @@ test('derives verified turn phase or truthful waiting fallback', () => {
   assert.equal(deriveTurnPhase({ activity: [] }).label, 'Waiting for turn');
 });
 
+test('labels completed matches without showing a live turn phase', () => {
+  assert.deepEqual(deriveTurnPhase({ game: { gameOver: true }, activity: [{ phase: 'observe' }] }), {
+    key: 'complete', label: 'Match complete',
+  });
+});
+
 test('formats system probe activity as compact verified metadata', () => {
   assert.equal(formatActivity({ source: 'system', type: 'moves.list', square: 'e2', count: 2 }).meta, 'e2 · 2 legal moves');
 });
@@ -70,6 +76,17 @@ test('retains queued steering when verified activity exists, newest first', () =
     trace: [{ type: 'steering.queued', message: 'Avoid exchanges.', at: '2026-07-21T12:01:00.000Z' }],
   });
   assert.deepEqual(entries.map((entry) => entry.type), ['steering.queued', 'moves.list']);
+});
+
+test('uses structured activity without duplicating generic trace copies', () => {
+  const entries = selectActivityEntries({
+    activity: [{ type: 'move.submit', source: 'system', selectedMove: 'e2e4', at: '2026-07-21T12:01:00.000Z' }],
+    trace: [
+      { type: 'agent.move', uci: 'e2e4', at: '2026-07-21T12:01:00.000Z' },
+      { type: 'steering.queued', message: 'Avoid exchanges.', at: '2026-07-21T12:00:00.000Z' },
+    ],
+  });
+  assert.deepEqual(entries.map((entry) => entry.type), ['move.submit', 'steering.queued']);
 });
 
 test('renders malicious activity text without injecting markup', () => {
@@ -98,4 +115,7 @@ test('keeps phase ribbon and activity rail visible outside secondary tabs', asyn
   assert.match(html, /id="activity"/);
   assert.match(css, /\.board\s*\{[^}]*aspect-ratio:\s*1/);
   assert.match(css, /\.square\s*\{[^}]*aspect-ratio:\s*1/);
+  assert.match(css, /@media \(max-width: 1020px\)[\s\S]*?\.match-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.player-identity,\s*\.player-meta\s*\{[^}]*min-width:\s*0/);
+  assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.clock\s*\{[^}]*min-width:\s*0/);
 });

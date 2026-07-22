@@ -154,24 +154,34 @@ h1, h2, h3, p { margin-top: 0; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: #eef2eb; color: #182015; padding: 10px 14px; border-radius: 7px; font-weight: 750; transition: .18s ease; z-index: 100; }
 .toast.visible { opacity: 1; transform: translate(-50%, 0); }
 @media (max-width: 1020px) {
-  .match-layout { grid-template-columns: 1fr; }
-  .control-rail { max-height: none; grid-template-columns: 1fr 1fr; overflow: visible; }
+  .match-layout { grid-template-columns: minmax(0, 1fr); }
+  .control-rail { max-height: none; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }
   .activity-panel { order: -1; grid-column: 1 / -1; }
   .tab-panel, .post-match { grid-column: 1 / -1; }
 }
 @media (max-width: 720px) {
-  .topbar { grid-template-columns: 1fr auto; padding: 0 14px; }
+  .topbar { grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding: 0 14px; }
+  .brand > span:last-child { display: none; }
   .mode-chip { display: none; }
+  .top-actions { min-width: 0; gap: 4px; }
+  .connection-badge { min-width: 0; padding-inline: 8px; }
   .app-shell { padding: 12px; }
   .setup-shell { grid-template-columns: 1fr; align-content: start; padding-top: 40px; }
   .setup-copy h1 { font-size: 3rem; }
   .match-context { align-items: flex-start; }
   .context-actions { flex-direction: column; align-items: flex-end; }
-  .control-rail { grid-template-columns: 1fr; }
+  .control-rail { grid-template-columns: minmax(0, 1fr); }
   .tab-panel, .post-match { grid-column: auto; }
   .phase-ribbon { margin-top: 10px; padding: 9px; }
   .phase-steps { gap: 3px; }
   .phase-steps li { display: grid; justify-items: center; gap: 3px; font-size: .64rem; text-align: center; }
+  .player-strip { gap: 8px; }
+  .player-identity, .player-meta { min-width: 0; gap: 6px; }
+  .player-identity { flex: 1 1 0; }
+  .player-identity > div { min-width: 0; }
+  .player-meta { flex: 0 1 auto; }
+  .avatar { flex: 0 0 42px; }
+  .clock { min-width: 0; padding: 8px 7px; font-size: .78rem; }
   .piece { font-size: clamp(1.8rem, 11vw, 4rem); }
   .field-row { grid-template-columns: 1fr; }
 }
