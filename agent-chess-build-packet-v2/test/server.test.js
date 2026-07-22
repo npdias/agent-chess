@@ -44,7 +44,7 @@ function collectMessages(socket) {
   };
 }
 
-test('creates a match and sends the first legal turn to an authenticated agent seat', async () => {
+test('sends a compact protocol 2.0 turn and routes probes to its authenticated seat', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);
 
@@ -70,9 +70,22 @@ test('creates a match and sends the first legal turn to an authenticated agent s
     assert.equal(started.matchId, created.matchId);
 
     const turn = await messages.next( (message) => message.type === 'turn.start');
-    assert.equal(turn.color, 'white');
-    assert.equal(turn.legalMoves.length, 20);
-    assert.ok(turn.legalMoves.some((move) => move.uci === 'e2e4'));
+    assert.equal(turn.agentColor, 'white');
+    assert.equal(turn.protocolVersion, '2.0');
+    assert.equal('legalMoves' in turn, false);
+    assert.deepEqual(turn.positionStatus.movablePieces.find((piece) => piece.square === 'e2'), {
+      square: 'e2', piece: 'pawn',
+    });
+
+    socket.send(JSON.stringify({ type: 'moves.list', turnId: turn.turnId, square: 'e2' }));
+    const listed = await messages.next((message) => message.type === 'moves.list.result');
+    assert.equal(listed.turnId, turn.turnId);
+    assert.equal(listed.square, 'e2');
+    assert.deepEqual(listed.moves.map((move) => move.uci), ['e2e3', 'e2e4']);
+
+    socket.send(JSON.stringify({ type: 'moves.list', turnId: 'stale-turn', square: 'e2' }));
+    const rejected = await messages.next((message) => message.type === 'move.rejected');
+    assert.equal(rejected.code, 'STALE_TURN');
     socket.close();
   } finally {
     await server.stop();
@@ -108,9 +121,54 @@ test('accepts an agent move, runs the opponent, and emits the next turn', async 
     const secondTurn = await messages.next(
       (message) => message.type === 'turn.start' && message.turnId !== firstTurn.turnId
     );
-    assert.equal(secondTurn.movesUci.length, 2);
-    assert.equal(secondTurn.movesUci[0], 'e2e4');
+    assert.equal(secondTurn.recentMoves.length, 2);
+    assert.equal(secondTurn.recentMoves[0].uci, 'e2e4');
     socket.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('broadcasts trace candidates in observer state', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+
+  try {
+    const created = await fetch(`${address.httpUrl}/api/matches`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentColor: 'white' }),
+    }).then((response) => response.json());
+    const observer = new WebSocket(`${address.wsUrl}/events?matchId=${created.matchId}`);
+    const observerMessages = collectMessages(observer);
+    const agent = new WebSocket(`${address.wsUrl}/agent?token=${created.seatToken}`);
+    const agentMessages = collectMessages(agent);
+    await Promise.all([observer, agent].map((socket) => new Promise((resolve, reject) => {
+      socket.once('open', resolve);
+      socket.once('error', reject);
+    })));
+    await agentMessages.next((message) => message.type === 'match.start');
+    const turn = await agentMessages.next((message) => message.type === 'turn.start');
+    await observerMessages.next((message) => message.type === 'match.state');
+
+    agent.send(JSON.stringify({
+      type: 'trace.publish',
+      turnId: turn.turnId,
+      phase: 'choose',
+      summary: 'Prefer center.',
+      candidates: [{ uci: 'e2e4', note: 'Controls d5.' }],
+      selectedMove: 'e2e4',
+    }));
+
+    const state = await observerMessages.next((message) => (
+      message.type === 'match.state'
+      && message.match.activity.some((entry) => entry.type === 'agent.trace')
+    ));
+    const trace = state.match.activity.find((entry) => entry.type === 'agent.trace');
+    assert.deepEqual(trace.candidates, [{ uci: 'e2e4', note: 'Controls d5.' }]);
+    assert.equal(trace.selectedMove, 'e2e4');
+    agent.close();
+    observer.close();
   } finally {
     await server.stop();
   }

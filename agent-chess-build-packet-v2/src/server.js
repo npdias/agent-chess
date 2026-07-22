@@ -8,6 +8,11 @@ import { MatchSession } from './match.js';
 import { StockfishEngine } from './stockfish.js';
 import { MESSAGE_TYPES, parseClientMessage } from './protocol.js';
 
+function errorCode(error) {
+  const code = String(error.message).split(':')[0];
+  return code === 'ILLEGAL_MOVE' ? 'MOVE_NOT_LEGAL' : code;
+}
+
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PUBLIC_DIR = join(ROOT, 'public');
 
@@ -147,32 +152,67 @@ export function createAgentChessServer({
       let message;
       try {
         message = parseClientMessage(raw);
-        if (message.type === MESSAGE_TYPES.TRACE_PUBLISH) {
-          const entry = record.session.publishTrace({ phase: message.phase, summary: message.summary });
-          broadcast(record, { type: MESSAGE_TYPES.TRACE_PUBLISH, entry });
-          broadcastState(record);
-          return;
+        switch (message.type) {
+          case MESSAGE_TYPES.MOVES_LIST: {
+            const result = record.session.listMovesForPiece(message);
+            safeSend(socket, {
+              type: MESSAGE_TYPES.MOVES_LIST_RESULT,
+              ...result,
+              piece: record.session.game.getMovablePieces().find((piece) => piece.square === message.square)?.piece,
+            });
+            broadcastState(record);
+            return;
+          }
+          case MESSAGE_TYPES.MOVES_LIST_ALL: {
+            const result = record.session.listAllMoves(message);
+            safeSend(socket, { type: MESSAGE_TYPES.MOVES_LIST_ALL_RESULT, ...result });
+            broadcastState(record);
+            return;
+          }
+          case MESSAGE_TYPES.HISTORY_LIST: {
+            const result = record.session.listHistory(message);
+            safeSend(socket, {
+              type: MESSAGE_TYPES.HISTORY_LIST_RESULT,
+              ...result,
+              hasMore: result.moves.length > 0 && result.moves[0].ply > 1,
+            });
+            broadcastState(record);
+            return;
+          }
+          case MESSAGE_TYPES.MOVE_VALIDATE: {
+            const result = record.session.validateCandidate(message);
+            safeSend(socket, { type: MESSAGE_TYPES.MOVE_VALIDATE_RESULT, turnId: message.turnId, ...result });
+            broadcastState(record);
+            return;
+          }
+          case MESSAGE_TYPES.TRACE_PUBLISH: {
+            const entry = record.session.publishTrace(message);
+            broadcast(record, { type: MESSAGE_TYPES.TRACE_PUBLISH, entry });
+            broadcastState(record);
+            return;
+          }
+          case MESSAGE_TYPES.MOVE_SUBMIT: {
+            const applied = record.session.submitAgentMove(message);
+            const accepted = {
+              type: MESSAGE_TYPES.MOVE_ACCEPTED,
+              matchId: record.session.id,
+              turnId: message.turnId,
+              moveUci: applied.uci,
+              moveSan: applied.san,
+            };
+            safeSend(socket, accepted);
+            broadcast(record, accepted);
+            broadcastState(record);
+            await advance(record);
+            return;
+          }
+          default:
+            throw new Error('UNSUPPORTED_MESSAGE');
         }
-        if (message.type !== MESSAGE_TYPES.MOVE_SUBMIT) throw new Error('UNSUPPORTED_MESSAGE');
-        const applied = record.session.submitAgentMove({
-          turnId: message.turnId,
-          moveUci: message.moveUci,
-        });
-        const accepted = {
-          type: MESSAGE_TYPES.MOVE_ACCEPTED,
-          matchId: record.session.id,
-          turnId: message.turnId,
-          moveUci: applied.uci,
-          moveSan: applied.san,
-        };
-        safeSend(socket, accepted);
-        broadcast(record, accepted);
-        broadcastState(record);
-        await advance(record);
       } catch (error) {
         safeSend(socket, {
           type: MESSAGE_TYPES.MOVE_REJECTED,
-          code: error.message.split(':')[0],
+          code: errorCode(error),
           message: error.message,
           turnId: message?.turnId ?? null,
         });
