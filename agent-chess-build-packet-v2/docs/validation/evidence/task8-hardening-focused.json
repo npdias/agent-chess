@@ -1,5 +1,5 @@
 {
-  "validatedCodeCommit": "e42fc682b87a89bdd21cd5e5fbff66cbab709130",
+  "validatedCodeCommit": "57de8fcf67270dcedea87d739ae7860d46d327cd",
   "baselineSuite": {
     "tests": 179,
     "pass": 179,
@@ -13,28 +13,29 @@
     "durationMs": 2504.364292
   },
   "hardeningDFinalSuite": {
-    "tests": 187,
-    "pass": 187,
+    "tests": 189,
+    "pass": 189,
     "fail": 0,
-    "durationMs": 2765.926083
+    "durationMs": 2747.679667
   },
   "hardeningDFocused": {
-    "tests": 15,
-    "pass": 15,
+    "tests": 17,
+    "pass": 17,
     "fail": 0,
     "groups": {
-      "connectorProvenance": { "tests": 7, "pass": 7, "durationMs": 31.745541 },
-      "adapterStatus": { "tests": 1, "pass": 1, "durationMs": 16.778583 },
-      "uiDisclosure": { "tests": 2, "pass": 2, "durationMs": 0.993083 },
-      "terminalFailure": { "tests": 5, "pass": 5, "durationMs": 386.869375 }
+      "connectorProvenance": { "tests": 9, "pass": 9, "durationMs": 32.497082 },
+      "adapterStatus": { "tests": 1, "pass": 1, "durationMs": 17.878125 },
+      "uiDisclosure": { "tests": 2, "pass": 2, "durationMs": 1.060001 },
+      "terminalFailure": { "tests": 5, "pass": 5, "durationMs": 393.04675 }
     },
     "assertions": {
       "preservedSources": ["agent_reported", "provider_summary", "adapter_generated"],
       "absentSourceDefaultsTo": "agent_reported",
-      "explicitUnsupportedSource": { "code": "INVALID_TRACE_SOURCE", "reachesServerOrUi": false },
+      "explicitUnsupportedSource": { "code": "INVALID_TRACE_SOURCE", "withoutSummary": true, "withEmptySummary": true, "reachesServerOrUi": false },
       "demoAndStatusSource": "adapter_generated",
       "uiAgentDecisionLabel": "Decision",
       "uiNonrecoverableFailureLabel": "Match failed",
+      "publicFailureActivity": { "recoverable": false, "uiLabel": "Match failed" },
       "decisionDeadline": { "status": "failed", "termination": "failure", "failureCode": "AGENT_FAILURE", "errorBeforeGameEnd": true, "connectorExitCode": 1, "rawDiagnosticLeak": false },
       "engineFailure": { "status": "failed", "termination": "failure", "failureCode": "ENGINE_FAILURE", "errorBeforeGameEnd": true, "connectorExitCode": 1, "rawDiagnosticLeak": false }
     },
@@ -43,6 +44,8 @@
       "preserves an allowed command trace source and defaults absent source to agent reported",
       "defaults only absent, null, or empty command trace source to agent reported",
       "rejects an explicit unsupported command trace source",
+      "rejects an unsupported command trace source when summary is absent",
+      "rejects an unsupported command trace source when summary is empty",
       "rejects unsupported trace provenance returned by a command before submission",
       "demo move trace names its selected legal candidate",
       "attaches public trace to submitted move and binds selected move",
