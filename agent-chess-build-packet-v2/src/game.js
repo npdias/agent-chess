@@ -44,6 +44,10 @@ export class AgentChessGame {
   }
 
   getRecentMoves(limitPlies = 12) {
+    if (!Number.isInteger(limitPlies) || limitPlies < 0) {
+      throw new Error('INVALID_HISTORY_LIMIT');
+    }
+    if (limitPlies === 0) return [];
     const history = this.chess.history({ verbose: true });
     return history.slice(-limitPlies).map((move, index, moves) => ({
       ply: history.length - moves.length + index + 1,
@@ -82,6 +86,9 @@ export class AgentChessGame {
     deadline,
     recentMoveWindowPlies = 12,
   }) {
+    const sideToMove = this.chess.turn() === 'w' ? 'white' : 'black';
+    if (agentColor !== sideToMove) throw new Error('NOT_AGENT_TURN');
+
     return {
       type: MESSAGE_TYPES.TURN_START,
       protocolVersion: PROTOCOL_VERSION,
@@ -89,7 +96,7 @@ export class AgentChessGame {
       turnId,
       variant: 'standard',
       agentColor,
-      sideToMove: this.chess.turn() === 'w' ? 'white' : 'black',
+      sideToMove,
       fen: this.chess.fen({ forceEnpassantSquare: true }),
       ply: this.movesUci.length,
       recentMoves: this.getRecentMoves(recentMoveWindowPlies),

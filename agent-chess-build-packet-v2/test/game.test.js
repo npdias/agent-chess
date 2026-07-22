@@ -59,10 +59,39 @@ test('builds compact turn without full legal list', () => {
     deadline: null,
   });
 
+  assert.deepEqual(Object.keys(turn).sort(), [
+    'agentColor', 'deadline', 'fen', 'gameId', 'ply', 'positionStatus',
+    'protocolVersion', 'recentMoves', 'sideToMove', 'steering', 'turnId', 'type', 'variant',
+  ]);
+  assert.equal(turn.type, 'turn.start');
   assert.equal(turn.protocolVersion, '2.0');
+  assert.equal(turn.gameId, 'g');
+  assert.equal(turn.turnId, 't');
+  assert.equal(turn.variant, 'standard');
+  assert.equal(turn.agentColor, 'white');
+  assert.equal(turn.sideToMove, 'white');
+  assert.equal(turn.fen.split(' ').length, 6);
+  assert.equal(turn.ply, 0);
+  assert.deepEqual(turn.recentMoves, []);
+  assert.deepEqual(turn.steering, { mode: 'locked', guidance: null });
+  assert.equal(turn.deadline, null);
   assert.equal('legalMoves' in turn, false);
   assert.equal('movesUci' in turn, false);
   assert.equal(turn.positionStatus.inCheck, false);
+  assert.deepEqual(turn.positionStatus.movablePieces[0], { square: 'a2', piece: 'pawn' });
+  assert.deepEqual(Object.keys(turn.positionStatus.movablePieces[0]), ['square', 'piece']);
+});
+
+test('rejects a turn snapshot for a non-moving agent color', () => {
+  const game = new AgentChessGame();
+
+  assert.throws(() => game.buildTurnSnapshot({
+    gameId: 'g',
+    turnId: 't',
+    agentColor: 'black',
+    steering: { mode: 'locked', guidance: null },
+    deadline: null,
+  }), /NOT_AGENT_TURN/);
 });
 
 test('piece probe returns only e2 moves', () => {
@@ -79,6 +108,25 @@ test('returns configured trailing history window', () => {
     { ply: 3, color: 'white', uci: 'g1f3', san: 'Nf3' },
     { ply: 4, color: 'black', uci: 'b8c6', san: 'Nc6' },
   ]);
+});
+
+test('rejects negative history limits', () => {
+  const game = new AgentChessGame();
+
+  assert.throws(() => game.getRecentMoves(-1), /INVALID_HISTORY_LIMIT/);
+});
+
+test('rejects non-integer history limits', () => {
+  const game = new AgentChessGame();
+
+  assert.throws(() => game.getRecentMoves(1.5), /INVALID_HISTORY_LIMIT/);
+});
+
+test('returns no history for a zero-ply window', () => {
+  const game = new AgentChessGame();
+  game.applyMove('e2e4');
+
+  assert.deepEqual(game.getRecentMoves(0), []);
 });
 
 test('reports check status from authoritative legal position', () => {
