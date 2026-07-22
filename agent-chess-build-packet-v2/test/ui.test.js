@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildExhibitionPayload, materialPerspective, buildAgentInviteUrl, selectDecisionBrief, deriveBoardTransitions } from '../public/app.js';
+import { buildExhibitionPayload, materialPerspective, buildAgentInviteUrl, selectDecisionBrief, deriveBoardTransitions, buildMaterialDisplay } from '../public/app.js';
 import { spawnSync } from 'node:child_process';
 import { fenToBoard, shellQuote, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
 
@@ -418,6 +418,29 @@ test('uses Thinking Waiting and Finished player states without No clock', async 
   assert.match(app, /summary\.review \? 'Finished' : match\.game\.turn === seat\.color \? 'Thinking' : 'Waiting'/);
   assert.doesNotMatch(app, /\? 'To move' : 'No clock'/);
   assert.doesNotMatch(html, /id="(?:top|bottom)-state" class="clock">No clock/);
+});
+
+test('keeps captured-piece detail accessible while showing compact material score', () => {
+  assert.deepEqual(buildMaterialDisplay({ captured: ['white pawn', 'white knight'], difference: -6 }), {
+    text: 'Material -6',
+    accessible: 'Captured: white pawn, white knight; Material -6',
+  });
+  assert.deepEqual(buildMaterialDisplay({ captured: ['black pawn'], difference: 1 }), {
+    text: 'Material +1',
+    accessible: 'Captured: black pawn; Material +1',
+  });
+});
+
+test('keeps every visible desktop footer child within the 24px footer', async () => {
+  const [app, css] = await Promise.all([
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  assert.match(app, /materialNode\.setAttribute\('aria-label', display\.accessible\)/);
+  assert.match(app, /materialNode\.title = display\.accessible/);
+  assert.match(css, /\.board-footer \.material\s*\{[^}]*white-space:\s*nowrap[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*line-height:\s*24px/);
+  assert.match(css, /\.board-footer \.text-button\s*\{[^}]*height:\s*24px[^}]*min-height:\s*24px[^}]*padding:\s*0 6px[^}]*line-height:\s*24px/);
+  assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.board-footer \.text-button\s*\{[^}]*min-height:\s*44px/);
 });
 
 test('keeps board squares stable while reconciling keyed pieces', async () => {

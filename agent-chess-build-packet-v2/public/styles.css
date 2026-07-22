@@ -94,7 +94,8 @@ h1, h2, h3, p { margin-top: 0; }
 .square.dark .rank-label, .square.dark .file-label { color: #e9efd9; }
 .board-footer { width: min(100%, 820px); max-height: 24px; margin: 2px auto 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; overflow: hidden; }
 .material { color: var(--muted); font-size: .72rem; }
-.board-footer .material { margin-right: auto; }
+.board-footer .material { min-width: 0; margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 24px; }
+.board-footer .text-button { height: 24px; min-height: 24px; padding: 0 6px; line-height: 24px; }
 .control-rail { display: grid; gap: 12px; align-content: start; padding-right: 2px; }
 .connector-card { padding: 14px; display: grid; gap: 10px; border-color: #47613d; background: #172016; }
 .connector-card.connected { min-height: 0; padding: 8px 10px; border-color: var(--line); background: var(--surface); }
@@ -222,6 +223,8 @@ dialog::backdrop { background: #0009; }
   .player-meta { flex: 0 1 auto; }
   .avatar { flex: 0 0 42px; }
   .clock { min-width: 0; padding: 8px 7px; font-size: .78rem; }
+  .board-footer { max-height: none; min-height: 44px; }
+  .board-footer .text-button { height: 44px; min-height: 44px; padding: 0 10px; line-height: normal; }
   .piece { font-size: clamp(1.8rem, 11vw, 4rem); }
   .connector-actions { display: grid; grid-template-columns: 1fr; }
   .connector-actions button { width: 100%; min-height: 44px; }

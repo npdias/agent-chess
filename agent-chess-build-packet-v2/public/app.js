@@ -205,6 +205,14 @@ export function materialPerspective(ownedControllerColor, humanColor) {
   return ownedControllerColor ?? humanColor ?? 'white';
 }
 
+export function buildMaterialDisplay(material) {
+  const score = `${material.difference >= 0 ? '+' : ''}${material.difference}`;
+  return {
+    text: `Material ${score}`,
+    accessible: `Captured: ${material.captured.join(', ') || 'none'}; Material ${score}`,
+  };
+}
+
 export function buildReviewItem(doc, label, value) {
   const row = doc.createElement('div'); row.className = 'review-item';
   const name = doc.createElement('span'); name.textContent = label;
@@ -507,8 +515,11 @@ function render(match) {
   qs('fen').textContent = match.game.fen;
   const material = materialSummary(match.game.positions?.[0] ?? match.game.fen, match.game.fen, materialPerspective(ownedControllerColor, humanColor));
   const materialNode = qs('material');
+  const display = buildMaterialDisplay(material);
   materialNode.hidden = !material.captured.length && material.difference === 0;
-  materialNode.textContent = `Captured: ${material.captured.join(', ')} · Material ${material.difference >= 0 ? '+' : ''}${material.difference}`;
+  materialNode.textContent = display.text;
+  materialNode.setAttribute('aria-label', display.accessible);
+  materialNode.title = display.accessible;
   qs('steering-form').hidden = true;
   qs('steering-locked').hidden = false;
   qs('steering-state').textContent = 'Locked';
