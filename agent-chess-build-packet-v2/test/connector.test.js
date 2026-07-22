@@ -12,6 +12,7 @@ import {
   runCommandAgent,
   validateLocalCandidate,
 } from '../src/connector.js';
+import { parseArgs, toWsUrl } from '../bin/connect-agent.js';
 
 const turn = {
   legalMoves: [
@@ -30,6 +31,13 @@ test('exchanges seat capability for ticket WebSocket path without exposing it', 
   assert.equal(wsPath, '/agent?ticket=short-lived');
   assert.equal(request.url, 'http://localhost:3000/api/agent-sessions');
   assert.equal(request.options.headers.authorization, 'Bearer capability-secret');
+});
+
+test('accepts copied browser ticket path without exchanging a seat capability', () => {
+  const args = parseArgs(['--server', 'http://localhost:3000', '--path', '/agent?ticket=short-lived', '--demo']);
+  assert.deepEqual(args, { server: 'http://localhost:3000', path: '/agent?ticket=short-lived', demo: true });
+  assert.equal(toWsUrl(args.server, args.path), 'ws://localhost:3000/agent?ticket=short-lived');
+  assert.throws(() => parseArgs(['--server', 'http://localhost:3000', '--seat', 'capability', '--path', '/agent?ticket=short-lived', '--demo']), /exactly one/);
 });
 
 test('parses JSON agent output with an optional trace summary', () => {

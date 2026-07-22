@@ -228,6 +228,41 @@ test('agent capability exchanges once for a sixty-second ticket', async () => {
   }
 });
 
+test('browser copied --path connector command joins through its already-exchanged ticket', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const ticket = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    }).then((response) => response.json());
+    const child = spawn(process.execPath, ['bin/connect-agent.js', '--server', address.httpUrl, '--path', ticket.wsPath, '--demo'], {
+      cwd: new URL('..', import.meta.url),
+    });
+    let stdout = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('connector did not join')), 3000);
+      const poll = () => {
+        if (stdout.includes('Connected to agent seat.')) { clearTimeout(timer); resolve(); }
+        else setTimeout(poll, 10);
+      };
+      poll();
+    });
+    await fetch(`${address.httpUrl}/api/matches/${created.matchId}/resign`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.black}` },
+    });
+    const [code] = await once(child, 'close');
+    assert.equal(code, 0);
+    assert.match(stdout, /Game over:/);
+  } finally {
+    await server.stop();
+  }
+});
+
 test('generic capabilities remain independent by seat color', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);
@@ -276,6 +311,147 @@ test('agent reconnect preserves original active-turn deadline', async () => {
     assert.equal(replay.turnId, firstTurn.turnId);
     assert.equal(replay.deadline, firstTurn.deadline);
     second.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('sends protocol game.end once for natural completion, resignation, and decision deadline', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  const connectAgent = async (created, color) => {
+    const ticket = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities[color]}` },
+    }).then((response) => response.json());
+    const socket = new WebSocket(`${address.wsUrl}${ticket.wsPath}`);
+    const messages = collectMessages(socket);
+    await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+    await messages.next((message) => message.type === 'match.start');
+    return { socket, messages };
+  };
+  const submitHuman = async (created, turnId, moveUci) => fetch(`${address.httpUrl}/api/matches/${created.matchId}/human-moves`, {
+    method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ turnId, moveUci }),
+  });
+  try {
+    const natural = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const observer = new WebSocket(`${address.wsUrl}/events?matchId=${natural.matchId}`);
+    const observerMessages = collectMessages(observer);
+    await new Promise((resolve, reject) => { observer.once('open', resolve); observer.once('error', reject); });
+    const agent = await connectAgent(natural, 'black');
+    let state = await getMatch(address, natural.matchId);
+    await submitHuman(natural, state.activeTurn.turnId, 'f2f3');
+    let turn = await agent.messages.next((message) => message.type === 'turn.start');
+    agent.socket.send(JSON.stringify({ type: 'move.submit', turnId: turn.turnId, moveUci: 'e7e5', publicTrace: { summary: 'e5', candidates: [{ uci: 'e7e5' }], selectedMove: 'e7e5' } }));
+    await agent.messages.next((message) => message.type === 'move.accepted');
+    state = await getMatch(address, natural.matchId);
+    await submitHuman(natural, state.activeTurn.turnId, 'g2g4');
+    turn = await agent.messages.next((message) => message.type === 'turn.start');
+    agent.socket.send(JSON.stringify({ type: 'move.submit', turnId: turn.turnId, moveUci: 'd8h4', publicTrace: { summary: 'mate', candidates: [{ uci: 'd8h4' }], selectedMove: 'd8h4' } }));
+    const ended = await agent.messages.next((message) => message.type === 'game.end');
+    assert.equal(ended.result, '0-1');
+    await observerMessages.next((message) => message.type === 'game.end');
+    const finalState = await observerMessages.next((message) => message.type === 'match.state' && message.match.status === 'completed');
+    assert.equal(finalState.match.activeTurn, null);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal((await getMatch(address, natural.matchId)).status, 'completed');
+    agent.socket.close(); observer.close();
+
+    const resigned = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const resignedAgent = await connectAgent(resigned, 'black');
+    const resign = await fetch(`${address.httpUrl}/api/matches/${resigned.matchId}/resign`, {
+      method: 'POST', headers: { authorization: `Bearer ${resigned.capabilities.white}` },
+    });
+    assert.equal(resign.status, 202);
+    await resignedAgent.messages.next((message) => message.type === 'game.end');
+    assert.equal((await fetch(`${address.httpUrl}/api/matches/${resigned.matchId}/resign`, {
+      method: 'POST', headers: { authorization: `Bearer ${resigned.capabilities.white}` },
+    })).status, 202);
+    resignedAgent.socket.close();
+
+    const aborted = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const abortedAgent = await connectAgent(aborted, 'black');
+    assert.equal((await fetch(`${address.httpUrl}/api/matches/${aborted.matchId}/abort`, {
+      method: 'POST', headers: { authorization: `Bearer ${aborted.capabilities.white}` },
+    })).status, 202);
+    await abortedAgent.messages.next((message) => message.type === 'game.end');
+    abortedAgent.socket.close();
+
+    const deadline = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public', decisionDeadlineMs: 20,
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const deadlineAgent = await connectAgent(deadline, 'white');
+    await deadlineAgent.messages.next((message) => message.type === 'turn.start');
+    const deadlineEnd = await deadlineAgent.messages.next((message) => message.type === 'game.end');
+    assert.equal(deadlineEnd.result, '*');
+    deadlineAgent.socket.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('ignores rejected engine search after a human terminal action', async () => {
+  let rejectMove;
+  const pendingMove = new Promise((resolve, reject) => { rejectMove = reject; });
+  const server = createAgentChessServer({ stockfishFactory: async () => ({ bestMove: () => pendingMove, close() {} }) });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'engine', name: 'Engine' } },
+    });
+    const state = await getMatch(address, created.matchId);
+    await fetch(`${address.httpUrl}/api/matches/${created.matchId}/human-moves`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ turnId: state.activeTurn.turnId, moveUci: 'e2e4' }),
+    });
+    await fetch(`${address.httpUrl}/api/matches/${created.matchId}/resign`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    });
+    rejectMove(new Error('late engine rejection'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const finalState = await getMatch(address, created.matchId);
+    assert.equal(finalState.status, 'completed');
+    assert.equal(finalState.activity.some((entry) => entry.code === 'ENGINE_FAILURE'), false);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('ignores stale engine results and failures after a human terminal action', async () => {
+  let resolveMove;
+  const pendingMove = new Promise((resolve) => { resolveMove = resolve; });
+  const server = createAgentChessServer({ stockfishFactory: async () => ({ bestMove: () => pendingMove, close() {} }) });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'engine', name: 'Engine' } },
+    });
+    const state = await getMatch(address, created.matchId);
+    assert.equal((await fetch(`${address.httpUrl}/api/matches/${created.matchId}/human-moves`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ turnId: state.activeTurn.turnId, moveUci: 'e2e4' }),
+    })).status, 202);
+    assert.equal((await fetch(`${address.httpUrl}/api/matches/${created.matchId}/resign`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    })).status, 202);
+    resolveMove('e7e5');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const finalState = await getMatch(address, created.matchId);
+    assert.equal(finalState.status, 'completed');
+    assert.equal(finalState.game.ply, 1);
+    assert.equal(finalState.activity.some((entry) => entry.code === 'ENGINE_FAILURE'), false);
   } finally {
     await server.stop();
   }

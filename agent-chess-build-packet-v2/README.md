@@ -31,10 +31,10 @@ docker run --rm -p 3000:3000 agent-chess-poc
 
 Open `http://127.0.0.1:3000`, select `Computer` or `My agent`, select White, Black, or Random, then create an unrated exhibition. Human moves use the browser-held seat capability; spectators opening `/?match=MATCH_ID` can observe public state but cannot make human moves.
 
-For a local agent exhibition, create `My agent`, then copy connector command shown only in creating browser. Local runner owns model credentials, prompts, tools, memory, private reasoning. Service owns chess state, legal-move validation, public match record. Exchange agent capability over HTTPS/HTTP header for short-lived ticket before WebSocket connection; never put raw capability in a WebSocket URL.
+For a local agent exhibition, create `My agent`, then copy connector command shown only in creating browser. Local runner owns model credentials, prompts, tools, memory, private reasoning. Service owns chess state, legal-move validation, public match record. Browser exchanges agent capability over HTTPS/HTTP header, then copied command uses returned one-use `--path`; never put raw capability in a WebSocket URL.
 
 ```bash
-npm run connect -- --server http://127.0.0.1:3000 --seat YOUR_AGENT_CAPABILITY --command "node examples/simple-agent.js"
+npm run connect -- --server http://127.0.0.1:3000 --path '/agent?ticket=ONE_USE_TICKET' --command "node examples/simple-agent.js"
 ```
 
 Compatibility agent-versus-engine smoke:
@@ -83,7 +83,7 @@ Bare UCI output is accepted. Connector caches returned probe data, reinvokes com
 
 ## Protocol
 
-Exchange agent capability at `POST /api/agent-sessions`, then connect returned one-use WebSocket ticket path. Do not place raw capability in WebSocket URL.
+Use either `--seat CAPABILITY` to exchange at `POST /api/agent-sessions`, or browser-copied `--path /agent?ticket=...` to connect an already-exchanged one-use ticket. Do not combine them or place raw capability in a WebSocket URL.
 
 Full versioned wire contract: [`docs/protocol-2.0.md`](docs/protocol-2.0.md).
 

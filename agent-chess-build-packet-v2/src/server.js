@@ -128,6 +128,23 @@ export function createAgentChessServer({
     record.decisionTimer = null;
   }
 
+  function emitTerminal(record) {
+    if (record.terminalEmitted) return;
+    record.terminalEmitted = true;
+    clearDecisionDeadline(record);
+    record.deadlineTurnId = null;
+    const ended = {
+      type: MESSAGE_TYPES.GAME_END,
+      matchId: record.session.id,
+      result: record.session.snapshot().game.result,
+      pgn: record.session.game.pgn(),
+    };
+    for (const socket of record.agentSockets.values()) safeSend(socket, ended);
+    broadcast(record, ended);
+    broadcastState(record);
+    closeEngine(record);
+  }
+
   function armDecisionDeadline(record, turn) {
     if (!record.decisionDeadlineMs) return;
     if (record.deadlineTurnId === turn.turnId) return;
@@ -139,9 +156,7 @@ export function createAgentChessServer({
     record.decisionTimer = setTimeout(() => {
       if (record.session.activeTurn()?.turnId !== turn.turnId || record.session.isTerminal()) return;
       record.session.fail('AGENT_FAILURE', 'Decision deadline exceeded');
-      record.deadlineTurnId = null;
-      broadcastState(record);
-      closeEngine(record);
+      emitTerminal(record);
     }, record.decisionDeadlineMs);
   }
 
@@ -154,20 +169,11 @@ export function createAgentChessServer({
   }
 
   async function advance(record) {
-    if (record.advancing || record.engineFailed || record.session.isTerminal()) return;
+    if (record.advancing || record.engineFailed) return;
+    if (record.session.isTerminal()) return emitTerminal(record);
     const state = record.session.game.snapshot();
     if (state.gameOver) {
-      const ended = {
-        type: MESSAGE_TYPES.GAME_END,
-        matchId: record.session.id,
-        result: state.result,
-        pgn: record.session.game.pgn(),
-      };
-      for (const socket of record.agentSockets.values()) safeSend(socket, ended);
-      broadcast(record, ended);
-      broadcastState(record);
-      closeEngine(record);
-      return;
+      return emitTerminal(record);
     }
     const seat = record.session.activeSeat();
     if (seat.kind === 'human') {
@@ -184,9 +190,11 @@ export function createAgentChessServer({
     }
 
     record.advancing = true;
+    let turn;
     try {
-      const turn = record.session.createTurnPayload();
+      turn = record.session.createTurnPayload();
       const moveUci = await record.engine.bestMove(turn.fen, record.engineConfig);
+      if (record.session.isTerminal() || record.session.activeTurn()?.turnId !== turn.turnId) return;
       const applied = record.session.submitSeatMove({ color: seat.color, turnId: turn.turnId, moveUci });
       const event = {
         type: MESSAGE_TYPES.OPPONENT_MOVE,
@@ -198,10 +206,11 @@ export function createAgentChessServer({
       broadcast(record, event);
       broadcastState(record);
     } catch (error) {
+      if (record.session.isTerminal() || record.session.activeTurn()?.turnId !== turn?.turnId) return;
       record.engineFailed = true;
       record.session.recordSystemError('Engine unavailable', 'ENGINE_FAILURE');
       record.session.fail('ENGINE_FAILURE');
-      closeEngine(record);
+      emitTerminal(record);
       const event = { type: MESSAGE_TYPES.ERROR, code: 'ENGINE_FAILURE', message: 'Engine unavailable', recoverable: true };
       for (const socket of record.agentSockets.values()) safeSend(socket, event);
       broadcast(record, event);
@@ -353,6 +362,7 @@ export function createAgentChessServer({
         advancing: false,
         engineFailed: false,
         engineClosed: false,
+        terminalEmitted: false,
         decisionDeadlineMs: Number.isInteger(body.decisionDeadlineMs) && body.decisionDeadlineMs > 0
           ? Math.min(body.decisionDeadlineMs, 300_000) : null,
         decisionTimer: null,
@@ -443,8 +453,7 @@ export function createAgentChessServer({
           const result = action === 'resign' ? record.session.resign(seat.color) : record.session.abort(seat.color);
           clearDecisionDeadline(record);
           record.deadlineTurnId = null;
-          broadcastState(record);
-          closeEngine(record);
+          emitTerminal(record);
           sendJson(response, 202, { accepted: true, ...result });
         }
       } catch (error) {
