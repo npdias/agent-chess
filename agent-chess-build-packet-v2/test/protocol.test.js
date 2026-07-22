@@ -36,3 +36,29 @@ test('normalizes valid UCI validation moves', () => {
     type: 'move.validate', turnId: 't', moveUci: 'e2e4',
   });
 });
+test('requires turnId for trace publication', () => {
+  assert.throws(
+    () => parseClientMessage('{"type":"trace.publish","summary":"Choose e4."}'),
+    /STALE_TURN/
+  );
+});
+test('preserves normalized turn-scoped trace fields', () => {
+  assert.deepEqual(parseClientMessage(JSON.stringify({
+    type: 'trace.publish',
+    turnId: ' t ',
+    kind: 'decision',
+    phase: 'evaluate',
+    summary: 'Choose e4.',
+    candidates: [{ uci: 'e2e4', note: 'Claims center.' }],
+    selectedMove: null,
+    ignored: true,
+  })), {
+    type: 'trace.publish',
+    turnId: 't',
+    kind: 'decision',
+    phase: 'evaluate',
+    summary: 'Choose e4.',
+    candidates: [{ uci: 'e2e4', note: 'Claims center.' }],
+    selectedMove: null,
+  });
+});

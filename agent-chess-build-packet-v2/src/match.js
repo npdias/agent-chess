@@ -35,7 +35,8 @@ export class MatchSession {
     return !this.game.snapshot().gameOver && this.game.snapshot().turn === this.agentColor;
   }
 
-  publishTrace({ turnId = null, phase = 'thinking', summary, candidates, selectedMove = null } = {}) {
+  publishTrace({ turnId, phase = 'thinking', summary, candidates, selectedMove = null } = {}) {
+    this._assertActiveTurn(turnId);
     const clean = String(summary ?? '').trim();
     if (!clean) throw new Error('EMPTY_TRACE');
     const entry = this._recordActivity({

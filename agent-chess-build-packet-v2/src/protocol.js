@@ -36,9 +36,10 @@ const TURN_SCOPED_TYPES = new Set([
   MESSAGE_TYPES.HISTORY_LIST,
   MESSAGE_TYPES.MOVE_VALIDATE,
   MESSAGE_TYPES.MOVE_SUBMIT,
+  MESSAGE_TYPES.TRACE_PUBLISH,
 ]);
 
-const REQUEST_TYPES = new Set([...TURN_SCOPED_TYPES, MESSAGE_TYPES.TRACE_PUBLISH]);
+const REQUEST_TYPES = TURN_SCOPED_TYPES;
 const SQUARE_PATTERN = /^[a-h][1-8]$/;
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 
@@ -80,8 +81,13 @@ export function parseClientMessage(raw) {
   }
 
   if (message.type === MESSAGE_TYPES.TRACE_PUBLISH) {
+    if (typeof message.kind === 'string') parsed.kind = message.kind;
     if (typeof message.phase === 'string') parsed.phase = message.phase;
     if (typeof message.summary === 'string') parsed.summary = message.summary;
+    if (Array.isArray(message.candidates)) parsed.candidates = message.candidates;
+    if (typeof message.selectedMove === 'string' || message.selectedMove === null) {
+      parsed.selectedMove = message.selectedMove;
+    }
   }
 
   return parsed;

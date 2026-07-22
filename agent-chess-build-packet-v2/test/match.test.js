@@ -45,11 +45,38 @@ test('produces a fresh agent turn after the opponent moves', () => {
 
 test('stores only explicit structured trace summaries', () => {
   const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
-  const entry = match.publishTrace({ phase: 'planning', summary: 'Develop the kingside knight.' });
+  const turn = match.createTurnPayload();
+  const entry = match.publishTrace({
+    turnId: turn.turnId,
+    phase: 'planning',
+    summary: 'Develop the kingside knight.',
+  });
 
   assert.equal(entry.type, 'agent.trace');
   assert.equal(entry.phase, 'planning');
   assert.equal(match.snapshot().trace.at(-1).summary, 'Develop the kingside knight.');
+});
+
+test('rejects trace publication without an active turn before storing activity', () => {
+  const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
+  match.createTurnPayload();
+  const before = match.snapshot().activity;
+
+  assert.throws(() => match.publishTrace({ summary: 'Choose e4.' }), /STALE_TURN/);
+  assert.deepEqual(match.snapshot().activity, before);
+});
+
+test('rejects trace publication for a closed turn before storing activity', () => {
+  const match = new MatchSession({ steeringMode: 'locked', agentColor: 'white' });
+  const turn = match.createTurnPayload();
+  match.submitAgentMove({ turnId: turn.turnId, moveUci: 'e2e4' });
+  const before = match.snapshot().activity;
+
+  assert.throws(
+    () => match.publishTrace({ turnId: turn.turnId, summary: 'Choose e4.' }),
+    /STALE_TURN/
+  );
+  assert.deepEqual(match.snapshot().activity, before);
 });
 
 test('creates a compact protocol 2.0 turn payload', () => {
