@@ -1,4 +1,4 @@
-import { canHumanMove, selectHumanSquare, buildHumanMove } from './board-interaction.js';
+import { canHumanMove, selectHumanSquare, buildHumanMove, capabilityStorageEntries, deriveExhibitionSummary, materialSummary, replayPlyForRow } from './board-interaction.js';
 
 const PIECES = {
   K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
@@ -33,12 +33,6 @@ export function groupMoves(movesSan = []) {
     rows.push({ number: Math.floor(i / 2) + 1, white: movesSan[i] ?? '', black: movesSan[i + 1] ?? '' });
   }
   return rows;
-}
-
-export function capturedMaterial(initialFen, currentFen) {
-  const pieces = 'qrbnp';
-  const count = (fen, piece) => fenToBoard(fen).filter((token) => token === piece).length;
-  return pieces.map((piece) => Math.max(0, count(initialFen, piece) - count(currentFen, piece)) * ({ q: 9, r: 5, b: 3, n: 3, p: 1 }[piece])).reduce((sum, value) => sum + value, 0);
 }
 
 const TURN_PHASES = [
@@ -162,20 +156,7 @@ export function buildActivityEntry(doc, item) {
 }
 
 export function deriveMatchSummary(match) {
-  const game = match.game;
-  const agentWon = (match.agentColor === 'white' && game.result === '1-0') || (match.agentColor === 'black' && game.result === '0-1');
-  const draw = game.result === '1/2-1/2';
-  let status = !match.connected ? 'Waiting for agent' : game.turn === match.agentColor ? 'Agent to move' : 'Stockfish thinking';
-  if (game.gameOver) status = draw ? 'Draw' : agentWon ? 'Agent victory' : 'Stockfish victory';
-  return {
-    status,
-    resultLabel: game.gameOver ? game.result : 'In progress',
-    steeringLabel: match.steeringMode === 'trainer' ? 'Trainer enabled' : 'Locked',
-    termination: game.gameOver ? (game.checkmate ? 'Checkmate' : game.draw ? 'Draw' : 'Game over') : '—',
-    moveCount: Math.ceil((game.movesSan?.length ?? 0) / 2),
-    agentWon,
-    draw,
-  };
+  return deriveExhibitionSummary(match);
 }
 
 function qs(id) { return document.getElementById(id); }
@@ -188,6 +169,7 @@ let humanColor = null;
 let selection = { selected: null, legalTargets: [], legalMoves: [] };
 let replayPly = null;
 let pendingMove = false;
+let dragFrom = null;
 
 function toast(message) {
   const node = qs('toast');
@@ -232,6 +214,8 @@ function renderBoard(match) {
     if (pendingMove) square.classList.add('submission-pending');
     square.disabled = !canHumanMove(match, humanColor) || replayPly !== null || pendingMove;
     square.addEventListener('click', () => handleSquare(name));
+    square.addEventListener('pointerdown', () => { dragFrom = name; });
+    square.addEventListener('pointerup', () => { if (dragFrom && dragFrom !== name) { selection = selectHumanSquare(selection, dragFrom, currentMatch, humanColor); handleSquare(name); } dragFrom = null; });
     if (piece) {
       const token = document.createElement('span');
       token.className = `piece ${piece === piece.toUpperCase() ? 'white-piece' : 'black-piece'}`;
@@ -266,9 +250,9 @@ function renderMoves(match) {
   rows.forEach((move, index) => {
     const row = document.createElement('div');
     row.className = `move-row ${index === rows.length - 1 ? 'current' : ''}`;
-    row.tabIndex = 0;
-    row.addEventListener('click', () => { replayPly = Math.min(match.game.movesSan.length, index * 2 + (move.black ? 2 : 1)); qs('return-live').hidden = false; renderBoard(match); });
-    row.innerHTML = `<span>${move.number}.</span><strong>${move.white}</strong><strong>${move.black}</strong>`;
+    row.classList.add('move-row');
+    row.replaceChildren(...[move.number + '.', move.white, move.black].map((value) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = value; return button; }));
+    row.addEventListener('click', () => { replayPly = replayPlyForRow(index, Boolean(move.black), match.game.movesSan.length); qs('return-live').hidden = false; renderBoard(match); });
     list.append(row);
   });
   list.scrollTop = list.scrollHeight;
@@ -300,14 +284,14 @@ function renderPhaseRibbon(match) {
 
 function renderReview(match, summary) {
   const panel = qs('post-match');
-  panel.hidden = !match.game.gameOver;
-  if (!match.game.gameOver) return;
-  qs('review-headline').textContent = summary.agentWon ? 'The agent won the match.' : summary.draw ? 'The match ended in a draw.' : 'Stockfish won the match.';
-  qs('review-copy').textContent = `Completed after ${summary.moveCount} full moves under ${summary.steeringLabel.toLowerCase()} steering rules.`;
+  panel.hidden = !summary.review;
+  if (!summary.review) return;
+  qs('review-headline').textContent = summary.status;
+  qs('review-copy').textContent = `Completed after ${summary.moveCount} full moves.`;
   const items = [
     ['Final result', match.game.result],
     ['Termination', summary.termination],
-    ['Agent color', match.agentColor],
+    ['White', match.seats.white.name],
     ['Trace events', String(match.trace.length)],
   ];
   qs('review-list').innerHTML = items.map(([label, value]) => `<div class="review-item"><span>${label}</span><strong>${value}</strong></div>`).join('');
@@ -323,9 +307,9 @@ function render(match) {
   if (!humanColor && humanSeat) { humanColor = humanSeat[0]; boardFlipped = humanColor === 'black'; }
   qs('connection').textContent = 'Unrated exhibition';
   qs('connection').dataset.connected = String(match.connected);
-  qs('connection-small').textContent = match.connected ? 'Connected' : 'Disconnected';
+  qs('connection-small').textContent = summary.activeName;
   qs('engine').textContent = 'Unrated exhibition';
-  qs('engine-inline').textContent = `Skill ${match.engine.skillLevel} · ${match.engine.movetimeMs} ms/move`;
+  qs('engine-inline').textContent = seats.black?.kind ?? '';
   qs('match-title').textContent = match.game.gameOver ? summary.status : `${seats.white?.name ?? 'White'} vs ${seats.black?.name ?? 'Black'}`;
   qs('turn-label').textContent = match.game.gameOver ? match.game.result : `${seats[match.game.turn]?.name ?? match.game.turn} to move`;
   qs('engine-state').textContent = match.game.gameOver ? 'Finished' : 'No clock';
@@ -333,21 +317,22 @@ function render(match) {
   qs('agent-name').textContent = seats.white?.name ?? 'White';
   qs('opponent-name').textContent = seats.black?.name ?? 'Black';
   qs('fen').textContent = match.game.fen;
-  qs('material').textContent = `Captured material: ${capturedMaterial(match.game.positions?.[0] ?? match.game.fen, match.game.fen)}`;
+  const material = materialSummary(match.game.positions?.[0] ?? match.game.fen, match.game.fen, humanColor);
+  qs('material').textContent = `Captured: ${material.captured.join(', ') || 'none'} · Material ${material.difference >= 0 ? '+' : ''}${material.difference}`;
   qs('steering-form').hidden = true;
   qs('steering-locked').hidden = false;
   qs('steering-state').textContent = 'No clock';
   qs('status-title').textContent = summary.status;
   qs('summary-result').textContent = summary.resultLabel;
   qs('summary-moves').textContent = String(summary.moveCount);
-  qs('summary-steering').textContent = summary.steeringLabel;
+  qs('summary-steering').textContent = 'No clock';
   qs('summary-termination').textContent = summary.termination;
   renderPhaseRibbon(match);
   renderBoard(match);
   renderMoves(match);
   renderTrace(match);
   renderReview(match, summary);
-  qs('connector').hidden = !Object.values(seats).some((seat) => seat.kind === 'agent') || !sessionStorage.getItem(`${match.id}:agent`);
+  qs('connector').hidden = !Object.entries(seats).some(([color, seat]) => seat.kind === 'agent' && sessionStorage.getItem(`${match.id}:capability:${color}`));
   qs('lifecycle-action').textContent = (match.game.movesSan?.length ?? 0) ? 'Resign' : 'Abort';
 }
 
@@ -364,11 +349,9 @@ async function createMatch(event) {
   const url = new URL(location.href);
   url.searchParams.set('match', created.matchId);
   history.replaceState(null, '', url);
-  humanCapability = created.capabilities.human;
   humanColor = form.get('humanColor') === 'random' ? null : form.get('humanColor');
   if (humanColor) boardFlipped = humanColor === 'black';
-  sessionStorage.setItem(`${created.matchId}:human`, humanCapability);
-  if (created.capabilities.agent) sessionStorage.setItem(`${created.matchId}:agent`, created.capabilities.agent);
+  capabilityStorageEntries(created.matchId, created.capabilities).forEach(([key, capability]) => sessionStorage.setItem(key, capability));
   await loadMatch(created.matchId);
 }
 
@@ -379,8 +362,10 @@ async function loadMatch(matchId) {
     qs('match-view').hidden = true;
     return;
   }
-  humanCapability = sessionStorage.getItem(`${matchId}:human`);
-  render(await response.json());
+  const match = await response.json();
+  humanColor = Object.entries(match.seats).find(([color, seat]) => seat.kind === 'human' && sessionStorage.getItem(`${matchId}:capability:${color}`))?.[0] ?? null;
+  humanCapability = humanColor && sessionStorage.getItem(`${matchId}:capability:${humanColor}`);
+  render(match);
   eventSocket?.close();
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   eventSocket = new WebSocket(`${protocol}//${location.host}/events?matchId=${encodeURIComponent(matchId)}`);
@@ -449,7 +434,8 @@ function boot() {
   qs('new-match-button').addEventListener('click', () => { location.href = '/'; });
   qs('flip-board').addEventListener('click', () => { boardFlipped = !boardFlipped; if (currentMatch) renderBoard(currentMatch); });
   qs('copy-command').addEventListener('click', async () => {
-    const agentCapability = currentMatch && sessionStorage.getItem(`${currentMatch.id}:agent`);
+    const agentColor = currentMatch && Object.entries(currentMatch.seats).find(([, seat]) => seat.kind === 'agent')?.[0];
+    const agentCapability = agentColor && sessionStorage.getItem(`${currentMatch.id}:capability:${agentColor}`);
     if (!agentCapability) return;
     const response = await fetch('/api/agent-sessions', { method: 'POST', headers: { authorization: `Bearer ${agentCapability}` } });
     if (!response.ok) return toast('Connector unavailable');

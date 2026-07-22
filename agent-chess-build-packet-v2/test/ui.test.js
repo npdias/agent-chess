@@ -22,22 +22,17 @@ test('converts board indexes to algebraic square names', () => {
 
 test('derives live and completed match summary states', () => {
   const live = deriveMatchSummary({
-    agentColor: 'white',
-    connected: true,
-    steeringMode: 'trainer',
+    status: 'active', seats: { white: { name: 'Human' }, black: { name: 'Computer' } },
     game: { gameOver: false, turn: 'black', result: '*', movesSan: ['e4'] },
   });
-  assert.equal(live.status, 'Stockfish thinking');
+  assert.equal(live.status, 'Computer to move');
   assert.equal(live.resultLabel, 'In progress');
-  assert.equal(live.steeringLabel, 'Trainer enabled');
 
   const completed = deriveMatchSummary({
-    agentColor: 'white',
-    connected: true,
-    steeringMode: 'locked',
+    status: 'completed', seats: { white: { name: 'Human' }, black: { name: 'Computer' } },
     game: { gameOver: true, turn: 'black', result: '1-0', checkmate: true, movesSan: ['e4', 'e5', 'Qh5'] },
   });
-  assert.equal(completed.status, 'Agent victory');
+  assert.equal(completed.status, 'Checkmate');
   assert.equal(completed.resultLabel, '1-0');
   assert.equal(completed.termination, 'Checkmate');
 });

@@ -217,7 +217,6 @@ dialog::backdrop { background: #0009; }
   .tab-panel, .post-match { grid-column: auto; }
   .connector-card, .connector-actions { min-width: 0; }
   .connector-actions small { min-width: 0; max-width: 50%; }
-  .connector-actions #seat-token { overflow-wrap: anywhere; }
   .phase-ribbon { margin-top: 10px; padding: 9px; }
   .phase-steps { gap: 3px; }
   .phase-steps li { display: grid; justify-items: center; gap: 3px; font-size: .64rem; text-align: center; }

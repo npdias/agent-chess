@@ -70,3 +70,40 @@ export function buildHumanMove(state, destination, promotion) {
     ?? (promotions.length === 0 ? candidates[0] : null);
   return move ? { moveUci: move.uci, promotionRequired: false } : null;
 }
+
+export function capabilityStorageEntries(matchId, capabilities = {}) {
+  return Object.entries(capabilities).map(([color, capability]) => [`${matchId}:capability:${color}`, capability]);
+}
+
+export function deriveExhibitionSummary(match = {}) {
+  const game = match.game ?? {};
+  const active = match.seats?.[game.turn] ?? {};
+  const terminal = ['completed', 'aborted', 'failed'].includes(match.status) || game.gameOver;
+  const termination = match.termination === 'aborted' ? 'Aborted'
+    : match.termination === 'resigned' ? 'Resigned'
+      : match.termination ? String(match.termination).replaceAll('_', ' ') : game.checkmate ? 'Checkmate' : game.draw ? 'Draw' : '—';
+  const status = terminal ? (termination[0]?.toUpperCase() + termination.slice(1)) : `${active.name ?? game.turn ?? 'Match'} to move`;
+  return { status, resultLabel: terminal ? (game.result === '*' || !game.result ? status : game.result) : 'In progress', termination, moveCount: Math.ceil((game.movesSan?.length ?? 0) / 2), review: terminal, activeName: active.name ?? '' };
+}
+
+export function materialSummary(initialFen, currentFen, perspective = 'white') {
+  const values = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+  const initial = String(initialFen).split(' ')[0];
+  const current = String(currentFen).split(' ')[0];
+  const count = (fen, piece) => [...fen].filter((token) => token === piece).length;
+  const captured = [];
+  let difference = 0;
+  for (const [piece, value] of Object.entries(values)) {
+    for (const color of ['white', 'black']) {
+      const token = color === 'white' ? piece.toUpperCase() : piece;
+      const missing = Math.max(0, count(initial, token) - count(current, token));
+      if (missing) captured.push(`${color} ${piece === 'p' ? 'pawn' : ({ n: 'knight', b: 'bishop', r: 'rook', q: 'queen' }[piece])}`);
+      difference += (color === perspective ? -1 : 1) * missing * value;
+    }
+  }
+  return { captured, difference };
+}
+
+export function replayPlyForRow(index, hasBlackMove, totalPly) {
+  return Math.min(totalPly, index * 2 + (hasBlackMove ? 2 : 1));
+}

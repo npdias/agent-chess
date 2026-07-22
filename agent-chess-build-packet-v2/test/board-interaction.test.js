@@ -5,6 +5,10 @@ import {
   canHumanMove,
   legalMovesFrom,
   selectHumanSquare,
+  capabilityStorageEntries,
+  deriveExhibitionSummary,
+  materialSummary,
+  replayPlyForRow,
 } from '../public/board-interaction.js';
 
 function initialHumanMatch(color) {
@@ -153,4 +157,26 @@ test('requires promotion choice when legal moves contain promotion suffixes', ()
 
 test('rejects destination absent from selected authoritative move set', () => {
   assert.equal(buildHumanMove(promotionState(), 'd8'), null);
+});
+
+test('stores returned color-keyed capabilities without assigning human or agent labels', () => {
+  assert.deepEqual(capabilityStorageEntries('match-1', { white: 'human-cap', black: 'agent-cap' }), [
+    ['match-1:capability:white', 'human-cap'], ['match-1:capability:black', 'agent-cap'],
+  ]);
+});
+
+test('derives generic controller and terminal review state from seats and lifecycle', () => {
+  const match = { status: 'aborted', termination: 'aborted', seats: { white: { kind: 'human', name: 'N' }, black: { kind: 'engine', name: 'Computer' } }, game: { turn: 'black', result: '*', gameOver: false, movesSan: [] } };
+  assert.deepEqual(deriveExhibitionSummary(match), { status: 'Aborted', resultLabel: 'Aborted', termination: 'Aborted', moveCount: 0, review: true, activeName: 'Computer' });
+});
+
+test('derives captured piece names and side-relative material difference', () => {
+  const initial = '4k3/pppppppp/8/8/8/8/PPPPPPPP/4K3 w - - 0 1';
+  const current = '4k3/pp1ppppp/8/8/8/8/PPPPPPPP/4K3 w - - 0 1';
+  assert.deepEqual(materialSummary(initial, current, 'white'), { captured: ['black pawn'], difference: 1 });
+});
+
+test('maps a move row to its final ply for keyboard replay', () => {
+  assert.equal(replayPlyForRow(0, true, 5), 2);
+  assert.equal(replayPlyForRow(2, false, 5), 5);
 });
