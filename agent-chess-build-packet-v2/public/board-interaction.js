@@ -92,14 +92,16 @@ export function deriveOutcome(match = {}) {
   const game = match.game ?? {};
   const seats = match.seats ?? {};
   const terminal = ['completed', 'aborted', 'failed'].includes(match.status) || game.gameOver;
-  const resultCanDecideOutcome = terminal && !['aborted', 'failed'].includes(match.status)
-    && !['aborted', 'failure'].includes(match.termination);
+  const terminationKey = typeof match.termination === 'string' ? match.termination.toLowerCase() : '';
+  const decisiveEvidence = ['checkmate', 'resignation', 'game_over'].includes(terminationKey)
+    || (!terminationKey && game.checkmate === true);
+  const drawEvidence = terminationKey === 'draw' || (!terminationKey && game.draw === true);
   const result = typeof game.result === 'string' ? game.result : '*';
   const moveCount = Math.ceil((game.movesSan?.length ?? 0) / 2);
   const termination = outcomeTermination(match, game);
   const decisiveColor = result === '1-0' ? 'white' : result === '0-1' ? 'black' : null;
 
-  if (resultCanDecideOutcome && decisiveColor) {
+  if (match.status === 'completed' && decisiveEvidence && decisiveColor) {
     const color = titleCase(decisiveColor);
     const winnerName = seats[decisiveColor]?.name ?? color;
     return {
@@ -109,7 +111,7 @@ export function deriveOutcome(match = {}) {
     };
   }
 
-  if (resultCanDecideOutcome && (result === '1/2-1/2' || game.draw)) {
+  if (match.status === 'completed' && drawEvidence && (result === '1/2-1/2' || game.draw)) {
     const resultLabel = result === '1/2-1/2' ? result : '1/2-1/2';
     return {
       terminal, kind: 'draw', headline: 'Draw', secondary: `${resultLabel} · ${termination}`,

@@ -94,12 +94,28 @@ test('does not invent a winner for aborted or failed matches', () => {
   }
 });
 
+test('does not derive winners from stale lifecycle or termination values', () => {
+  const staleLifecycle = deriveOutcome({
+    status: 'stale', seats: { white: { name: 'Luna' }, black: { name: 'Computer' } },
+    game: { gameOver: true, checkmate: true, result: '1-0', movesSan: [] },
+  });
+  assert.equal(staleLifecycle.kind, 'status');
+  assert.equal(staleLifecycle.winnerColor, null);
+
+  const staleTermination = deriveOutcome({
+    status: 'completed', termination: 'stale', seats: { white: { name: 'Luna' }, black: { name: 'Computer' } },
+    game: { gameOver: true, result: '1-0', movesSan: [] },
+  });
+  assert.equal(staleTermination.kind, 'status');
+  assert.equal(staleTermination.winnerColor, null);
+});
+
 test('labels terminal player strips from truthful outcome only', () => {
   const base = { seats: { white: { name: 'Luna' }, black: { name: 'Computer' } }, game: { gameOver: true, movesSan: [] } };
-  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, result: '1-0' } }, 'white'), 'Winner');
-  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, result: '1-0' } }, 'black'), 'Lost');
-  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, result: '0-1' } }, 'white'), 'Lost');
-  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, result: '0-1' } }, 'black'), 'Winner');
+  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, checkmate: true, result: '1-0' } }, 'white'), 'Winner');
+  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, checkmate: true, result: '1-0' } }, 'black'), 'Lost');
+  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, checkmate: true, result: '0-1' } }, 'white'), 'Lost');
+  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, checkmate: true, result: '0-1' } }, 'black'), 'Winner');
   assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, draw: true, result: '1/2-1/2' } }, 'white'), 'Draw');
   assert.equal(derivePlayerState({ ...base, status: 'aborted', game: { ...base.game, gameOver: false, result: '*' } }, 'white'), 'Finished');
   assert.equal(derivePlayerState({ ...base, status: 'failed', game: { ...base.game, gameOver: false, result: '*' } }, 'black'), 'Finished');
