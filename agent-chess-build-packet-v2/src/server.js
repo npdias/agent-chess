@@ -7,7 +7,8 @@ import packageJson from '../package.json' with { type: 'json' };
 import { WebSocketServer, WebSocket } from 'ws';
 import { MatchSession } from './match.js';
 import { StockfishEngine } from './stockfish.js';
-import { MESSAGE_TYPES, parseClientMessage } from './protocol.js';
+import { createAgentAccessService } from './agent-access.js';
+import { AGENT_REST_ACTIONS, MESSAGE_TYPES, parseClientMessage } from './protocol.js';
 
 function errorCode(error) {
   const code = String(error.message).split(':')[0];
@@ -118,6 +119,7 @@ export function createAgentChessServer({
   const matches = new Map();
   const seatByToken = new Map();
   const seatByTicket = new Map();
+  const agentAccess = createAgentAccessService({ now: ticketNow });
   const terminalDelivered = new WeakSet();
   const agentWss = new WebSocketServer({ noServer: true });
   const eventWss = new WebSocketServer({ noServer: true });
@@ -140,7 +142,12 @@ export function createAgentChessServer({
         secretHandling: 'This URL is secret, expires, and remains single-use for connection. Keep credentials, prompts, private memory, local files, and raw reasoning local.',
         expiresAt: new Date(binding.expiresAt).toISOString(),
       },
-      connection: { wsUrl: `${protocol}//${host}/agent?ticket=${encodeURIComponent(ticket)}` },
+      connection: {
+        wsUrl: `${protocol}//${host}/agent?ticket=${encodeURIComponent(ticket)}`,
+        rest: { claimUrl: `${request.socket.encrypted ? 'https:' : 'http:'}//${host}/api/agent/claim?ticket=${encodeURIComponent(ticket)}`, actions: AGENT_REST_ACTIONS },
+        mcp: { url: `${request.socket.encrypted ? 'https:' : 'http:'}//${host}/mcp/agent?ticket=${encodeURIComponent(ticket)}` },
+        websocket: { url: `${protocol}//${host}/agent?ticket=${encodeURIComponent(ticket)}` },
+      },
       instructions: {
         actionOrder: [
           'Open WebSocket.', 'Wait for match.start and turn.start.', 'Optionally request probes.',
@@ -177,6 +184,31 @@ export function createAgentChessServer({
   function seatForToken(request, record, kind = null) {
     const seat = seatByToken.get(bearer(request));
     return seat?.record === record && (!kind || seat.kind === kind) ? seat : null;
+  }
+
+  function restSession(request) {
+    const token = bearer(request);
+    if (!token) throw new Error('UNAUTHORIZED');
+    return { token, ...agentAccess.authenticate(token) };
+  }
+
+  function agentConnection(request, invitation) {
+    const protocol = request.socket.encrypted ? 'https:' : 'http:';
+    const wsProtocol = request.socket.encrypted ? 'wss:' : 'ws:';
+    const host = request.headers.host ?? 'localhost';
+    const ticket = encodeURIComponent(invitation.claimToken);
+    return {
+      ticket: invitation.claimToken,
+      expiresAt: new Date(invitation.expiresAt).toISOString(),
+      connection: {
+        rest: { claimUrl: `${protocol}//${host}/api/agent/claim?ticket=${ticket}`, actions: AGENT_REST_ACTIONS },
+        mcp: { url: `${protocol}//${host}/mcp/agent?ticket=${ticket}` },
+        websocket: { url: `${wsProtocol}//${host}/agent?ticket=${ticket}` },
+      },
+      schemas: { decision: { turnId: 'string', source: 'string', phase: 'string', summary: 'string', selectedMove: 'uci' }, move: { turnId: 'string', moveUci: 'uci' } },
+      actionOrder: ['Claim invitation.', 'Read match or await turn.', 'List legal moves.', 'Publish sanitized decision.', 'Submit move.', 'Read result.'],
+      retry: { sameMove: 'idempotent', conflictingMove: 'CONFLICTING_REPLAY', staleTurn: 'STALE_TURN' },
+    };
   }
 
   function closeEngine(record) {
@@ -517,14 +549,86 @@ export function createAgentChessServer({
       const binding = seatByToken.get(bearer(request));
       if (!binding || binding.kind !== 'agent') return sendJson(response, 401, { error: 'UNAUTHORIZED' }), true;
       const ticket = randomBytes(24).toString('base64url');
-      const expiresAt = new Date(ticketNow() + 60_000);
+      const expiresAt = new Date(ticketNow() + 180_000);
       seatByTicket.set(ticket, { ...binding, matchId: binding.record.session.id, expiresAt: expiresAt.getTime() });
+      agentAccess.registerInvitation({ session: binding.record.session, color: binding.color, claimToken: ticket });
       sendJson(response, 201, {
         ticket,
         wsPath: `/agent?ticket=${encodeURIComponent(ticket)}`,
         joinPath: `/agent/join?ticket=${encodeURIComponent(ticket)}`,
         expiresAt: expiresAt.toISOString(),
       });
+      return true;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/agent-connections') {
+      const binding = seatByToken.get(bearer(request));
+      if (!binding || binding.kind !== 'agent') return sendJson(response, 401, { error: 'UNAUTHORIZED' }), true;
+      const invitation = agentAccess.registerInvitation({ session: binding.record.session, color: binding.color });
+      seatByTicket.set(invitation.claimToken, { ...binding, matchId: binding.record.session.id, expiresAt: invitation.expiresAt });
+      sendJson(response, 201, agentConnection(request, invitation), { 'cache-control': 'no-store' });
+      return true;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/agent/claim') {
+      try {
+        const claimed = agentAccess.claimInvitation(url.searchParams.get('ticket'));
+        seatByTicket.delete(url.searchParams.get('ticket'));
+        sendJson(response, 201, claimed, { 'cache-control': 'no-store' });
+      } catch (error) {
+        sendJson(response, error.message === 'INVITATION_EXPIRED' ? 410 : 409, { error: error.message });
+      }
+      return true;
+    }
+
+    if (url.pathname === '/api/agent/match' && request.method === 'GET') {
+      try {
+        sendJson(response, 200, agentAccess.joinMatch(restSession(request).token));
+      } catch (error) { sendJson(response, 401, { error: error.message }); }
+      return true;
+    }
+
+    if (url.pathname === '/api/agent/turn' && request.method === 'GET') {
+      try {
+        const waitMs = url.searchParams.get('waitMs') === null ? 0 : Number(url.searchParams.get('waitMs'));
+        sendJson(response, 200, await agentAccess.awaitTurn(restSession(request).token, { after: url.searchParams.get('after'), waitMs }));
+      } catch (error) { sendJson(response, error.message === 'UNAUTHORIZED' ? 401 : 400, { error: error.message }); }
+      return true;
+    }
+
+    if (url.pathname === '/api/agent/legal-moves' && request.method === 'GET') {
+      try {
+        sendJson(response, 200, agentAccess.listLegalMoves(restSession(request).token, { turnId: url.searchParams.get('turnId') }));
+      } catch (error) { sendJson(response, error.message === 'UNAUTHORIZED' ? 401 : error.message === 'STALE_TURN' ? 409 : 400, { error: error.message }); }
+      return true;
+    }
+
+    if ((url.pathname === '/api/agent/decision' || url.pathname === '/api/agent/move') && request.method === 'POST') {
+      try {
+        const access = restSession(request);
+        const body = await readJson(request);
+        if (url.pathname === '/api/agent/decision') {
+          sendJson(response, 202, agentAccess.publishDecision(access.token, body));
+        } else {
+          const result = agentAccess.submitMove(access.token, body);
+          const record = matches.get(access.matchId);
+          clearDecisionDeadline(record);
+          record.deadlineTurnId = null;
+          broadcastState(record);
+          sendJson(response, 202, result);
+          await pauseTurnTransition(record);
+          await advance(record);
+        }
+      } catch (error) {
+        const code = errorCode(error);
+        sendJson(response, code === 'UNAUTHORIZED' ? 401 : ['STALE_TURN', 'CONFLICTING_REPLAY', 'SEAT_NOT_ACTIVE'].includes(code) ? 409 : 400, { accepted: false, error: code });
+      }
+      return true;
+    }
+
+    if (url.pathname === '/api/agent/result' && request.method === 'GET') {
+      try { sendJson(response, 200, agentAccess.getResult(restSession(request).token)); }
+      catch (error) { sendJson(response, 401, { error: error.message }); }
       return true;
     }
 
@@ -656,6 +760,11 @@ export function createAgentChessServer({
             binding = seatByTicket.get(ticket);
             seatByTicket.delete(ticket);
             if (!binding || binding.expiresAt <= ticketNow()) return socket.destroy();
+            try {
+              agentAccess.claimInvitation(ticket);
+            } catch {
+              return socket.destroy();
+            }
           } else {
             const legacyToken = url.searchParams.get('token');
             binding = seatByToken.get(legacyToken);

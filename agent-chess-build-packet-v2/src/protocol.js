@@ -1,5 +1,14 @@
 export const PROTOCOL_VERSION = '2.0';
 
+export const AGENT_REST_ACTIONS = Object.freeze([
+  'GET /api/agent/match',
+  'GET /api/agent/turn',
+  'GET /api/agent/legal-moves',
+  'POST /api/agent/decision',
+  'POST /api/agent/move',
+  'GET /api/agent/result',
+]);
+
 export const MESSAGE_TYPES = Object.freeze({
   MATCH_START: 'match.start',
   TURN_START: 'turn.start',

@@ -309,7 +309,7 @@ test('public snapshot, events, and export exclude steering guidance sentinels', 
   }
 });
 
-test('agent capability exchanges once for a sixty-second ticket', async () => {
+test('agent capability exchanges once for a 180-second ticket', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);
   try {
@@ -325,7 +325,7 @@ test('agent capability exchanges once for a sixty-second ticket', async () => {
     const ticket = await ticketResponse.json();
     assert.match(ticket.ticket, /.+/);
     assert.match(ticket.wsPath, /^\/agent\?ticket=/);
-    assert.ok(Date.parse(ticket.expiresAt) - Date.now() <= 60_000);
+    assert.ok(Date.parse(ticket.expiresAt) - Date.now() <= 180_000);
     const first = new WebSocket(`${address.wsUrl}${ticket.wsPath}`);
     await new Promise((resolve, reject) => { first.once('open', resolve); first.once('error', reject); });
     const reused = new WebSocket(`${address.wsUrl}${ticket.wsPath}`);
@@ -334,6 +334,52 @@ test('agent capability exchanges once for a sixty-second ticket', async () => {
       reused.once('error', resolve);
     });
     first.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('durable REST agent session claims an invitation then submits an idempotent decision', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const connection = await fetch(`${address.httpUrl}/api/agent-connections`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    });
+    assert.equal(connection.status, 201);
+    const invite = await connection.json();
+    assert.match(invite.connection.rest.claimUrl, /\/api\/agent\/claim\?ticket=/);
+    assert.equal(JSON.stringify(await getMatch(address, created.matchId)).includes(invite.ticket), false);
+
+    const claim = await fetch(invite.connection.rest.claimUrl, { method: 'POST' });
+    assert.equal(claim.status, 201);
+    const { sessionToken } = await claim.json();
+    const auth = { authorization: `Bearer ${sessionToken}` };
+    const joined = await fetch(`${address.httpUrl}/api/agent/match`, { headers: auth });
+    assert.equal(joined.status, 200);
+    const { turn } = await joined.json();
+    const legal = await fetch(`${address.httpUrl}/api/agent/legal-moves?turnId=${turn.turnId}`, { headers: auth });
+    assert.equal(legal.status, 200);
+    assert.ok((await legal.json()).moves.some((move) => move.uci === 'e2e4'));
+    const decision = { turnId: turn.turnId, source: 'agent_reported', phase: 'choose', summary: 'Claim center.', selectedMove: 'e2e4' };
+    assert.equal((await fetch(`${address.httpUrl}/api/agent/decision`, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(decision),
+    })).status, 202);
+    const move = { turnId: turn.turnId, moveUci: 'e2e4' };
+    const first = await fetch(`${address.httpUrl}/api/agent/move`, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(move),
+    });
+    assert.equal(first.status, 202);
+    const replay = await fetch(`${address.httpUrl}/api/agent/move`, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(move),
+    });
+    assert.deepEqual(await replay.json(), await first.clone().json());
+    assert.equal((await fetch(`${address.httpUrl}/api/agent/turn?after=${turn.turnId}&waitMs=0`, { headers: auth })).status, 200);
+    assert.equal((await fetch(`${address.httpUrl}/api/agent/match`)).status, 401);
   } finally {
     await server.stop();
   }
