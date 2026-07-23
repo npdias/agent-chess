@@ -154,7 +154,8 @@ h1, h2, h3, p { margin-top: 0; }
 .move-row.current { background: var(--accent-deep); margin: 0 -6px; padding: 0 6px; }
 .post-match { border-color: #40543b; }
 .match-complete .post-match { min-height: 0; flex: 1 1 auto; overflow-y: auto; }
-.match-complete .moves-panel { flex: 0 0 150px; }
+.match-complete .moves-panel { flex: 0 0 164px; }
+.match-complete .moves-panel .moves { height: 114px; max-height: 114px; }
 .review-callout { background: var(--accent-deep); border: 1px solid #405b34; border-radius: 7px; padding: 12px; }
 .review-callout strong { color: var(--accent-strong); }
 .review-callout p { color: #c4cec0; margin: 6px 0 0; line-height: 1.5; }
@@ -186,8 +187,8 @@ dialog::backdrop { background: #0009; }
 .tool-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 14px 16px; }
 .promotion-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 16px 0; }
 .promotion-actions button { padding: 10px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--text); background: var(--surface-raised); }
-.focus-mode .topbar, .focus-mode .control-rail .panel { display: none; }
-.focus-mode .match-layout { grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); }
+.focus-mode .topbar, .focus-mode .control-rail { display: none; }
+.focus-mode .match-layout { grid-template-columns: minmax(0, 1fr); justify-content: center; }
 @media (min-width: 1021px) {
   .match-active, .match-active body { height: 100dvh; overflow: hidden; }
   .topbar { height: 48px; }
@@ -195,6 +196,7 @@ dialog::backdrop { background: #0009; }
   .app-shell { padding: 8px 18px; }
   .match-active .app-shell { height: calc(100dvh - 48px); overflow: hidden; }
   .match-layout { --desktop-fixed-chrome: 250px; --live-board-size: min(820px, calc(100dvh - var(--desktop-fixed-chrome)), calc(100vw - 492px)); grid-template-columns: var(--live-board-size) minmax(360px, 440px); gap: 16px; justify-content: center; }
+  .focus-mode .match-layout { grid-template-columns: var(--live-board-size); justify-content: center; }
   .board-stage { width: var(--live-board-size); }
   .match-context { min-height: 30px; margin-bottom: 0; }
   .match-context h1 { font-size: 1.25rem; line-height: 1.05; }
@@ -214,6 +216,8 @@ dialog::backdrop { background: #0009; }
   .connector-card, .panel { padding: 11px; }
   .control-rail { gap: 8px; }
   .moves-panel { min-height: 0; flex: 1 1 auto; overflow: hidden; }
+  .moves-panel.is-compact { flex: 0 0 auto; }
+  .moves-panel.is-compact .moves { max-height: none; }
   .moves-panel .moves { max-height: 100%; }
 }
 @media (max-width: 1020px) {

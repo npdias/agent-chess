@@ -11,6 +11,7 @@ const derivePlayerState = appModule.derivePlayerState ?? (() => '');
 const derivePostGameInterview = appModule.derivePostGameInterview ?? (() => ({}));
 const deriveBalanceOfPower = appModule.deriveBalanceOfPower ?? (() => ({}));
 const hasAgentJoined = appModule.hasAgentJoined ?? (() => false);
+const shouldCompactMoveHistory = appModule.shouldCompactMoveHistory ?? (() => false);
 
 test('maps FEN piece placement into 64 board squares', () => {
   const board = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
@@ -310,6 +311,16 @@ test('selects current structured decision without exposing private reasoning', (
   assert.deepEqual(selectDecisionBrief({ activity: [] }), {
     state: 'empty', intent: 'No public agent decision yet.', candidates: [], selectedMove: '', disclosure: 'No disclosure',
   });
+  assert.deepEqual(selectDecisionBrief({
+    activeTurn: { turnId: 'turn-2' },
+    activity: [
+      { type: 'agent.decision', turnId: 'turn-1', source: 'agent_reported', actor: 'agent', summary: 'Previous move.', selectedMove: 'a2a3' },
+      { type: 'turn.start', turnId: 'turn-2' },
+      { type: 'agent.trace', turnId: 'turn-2', actor: 'agent', source: 'agent_reported', phase: 'evaluate', summary: 'Evaluating current move.' },
+    ],
+  }), {
+    state: 'working', intent: 'Agent is evaluating current position.', candidates: [], selectedMove: '', disclosure: 'Phase status',
+  });
 });
 
 test('uses spectator-first hierarchy while preserving match controls', async () => {
@@ -344,6 +355,13 @@ test('keeps match tools available in focus mode', async () => {
   ]);
   assert.match(html, /id="match-tools-button"/);
   assert.doesNotMatch(css, /\.focus-mode[^}]*#match-tools-button/);
+});
+
+test('centers only the board stack in focus mode without reserving a hidden rail', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.focus-mode \.topbar,\s*\.focus-mode \.control-rail\s*\{[^}]*display:\s*none/);
+  assert.match(css, /@media \(min-width:\s*1021px\)[\s\S]*?\.focus-mode \.match-layout\s*\{[^}]*grid-template-columns:\s*var\(--live-board-size\)[^}]*justify-content:\s*center/);
+  assert.doesNotMatch(css, /\.focus-mode \.match-layout\s*\{[^}]*minmax\(280px,\s*360px\)/);
 });
 
 test('budgets full desktop board stack within a 720px viewport', async () => {
@@ -405,6 +423,26 @@ test('keeps board footer compact and technical position data out of sight', asyn
   assert.match(footer, /id="return-live"/);
   assert.match(footer, /id="flip-board"/);
   assert.doesNotMatch(footer, /id="fen"|No clock|position-line/);
+});
+
+test('uses mode-neutral move-history empty copy', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(app, /Moves will appear after play begins\./);
+  assert.doesNotMatch(app, /Moves will appear after the agent connects\./);
+});
+
+test('keeps early live move history content-sized and expands established games', async () => {
+  assert.equal(shouldCompactMoveHistory({ status: 'active', game: { movesSan: [] } }), true);
+  assert.equal(shouldCompactMoveHistory({ status: 'active', game: { movesSan: ['e4', 'e5', 'Nf3', 'Nc6'] } }), true);
+  assert.equal(shouldCompactMoveHistory({ status: 'active', game: { movesSan: Array.from({ length: 12 }, (_, index) => `m${index}`) } }), false);
+  assert.equal(shouldCompactMoveHistory({ status: 'completed', game: { gameOver: true, movesSan: [] } }), false);
+
+  const [app, css] = await Promise.all([
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  assert.match(app, /movesPanel\.classList\.toggle\('is-compact', shouldCompactMoveHistory\(match\)\)/);
+  assert.match(css, /\.moves-panel\.is-compact\s*\{[^}]*flex:\s*0 0 auto/);
 });
 
 test('collapses connected onboarding to a slim status row', async () => {
@@ -513,7 +551,8 @@ test('shows interview in terminal rail without adding another visible live-match
   assert.match(app, /decisionPanel\.hidden = summary\.review/);
   assert.match(app, /derivePostGameInterview\(match\)/);
   assert.match(css, /\.match-complete \.post-match\s*\{[^}]*overflow-y:\s*auto/);
-  assert.match(css, /\.match-complete \.moves-panel\s*\{[^}]*flex:\s*0 0 150px/);
+  assert.match(css, /\.match-complete \.moves-panel\s*\{[^}]*flex:\s*0 0 164px/);
+  assert.match(css, /\.match-complete \.moves-panel \.moves\s*\{[^}]*height:\s*114px[^}]*max-height:\s*114px/);
 });
 
 test('derives chess-site-style balance from Stockfish evaluation with truthful fallbacks', () => {

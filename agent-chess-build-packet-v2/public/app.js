@@ -115,10 +115,14 @@ export function buildAgentInviteUrl(origin, joinPath) {
 }
 
 export function selectDecisionBrief(match = {}) {
-  const decision = [...(match.activity ?? [])].reverse().find((entry) => (
+  const activity = match.activity ?? [];
+  const currentTurnId = match.activeTurn?.turnId
+    ?? [...activity].reverse().find((entry) => entry?.type === 'turn.start')?.turnId;
+  const decision = [...activity].reverse().find((entry) => (
     entry?.type === 'agent.decision'
     && entry?.actor === 'agent'
     && DISCLOSURE_LABELS[entry?.source]
+    && (!currentTurnId || entry.turnId === currentTurnId)
   ));
   if (decision) return {
     state: 'decision',
@@ -195,6 +199,10 @@ export function deriveMatchSummary(match) {
 
 function terminalMatch(match = {}) {
   return Boolean(match.game?.gameOver || ['completed', 'aborted', 'failed'].includes(match.status));
+}
+
+export function shouldCompactMoveHistory(match = {}) {
+  return !terminalMatch(match) && groupMoves(match.game?.movesSan ?? []).length < 6;
 }
 
 export function deriveTurnOwnerStatus(match = {}, ownedColor = null) {
@@ -580,9 +588,11 @@ function renderBoard(match) {
 function renderMoves(match) {
   const list = qs('moves');
   const rows = groupMoves(match.game.movesSan);
+  const movesPanel = list.closest('.moves-panel');
+  movesPanel.classList.toggle('is-compact', shouldCompactMoveHistory(match));
   list.replaceChildren();
   if (!rows.length) {
-    list.innerHTML = '<div class="trace-empty">Moves will appear after the agent connects.</div>';
+    list.innerHTML = '<div class="trace-empty">Moves will appear after play begins.</div>';
     return;
   }
   rows.forEach((move, index) => {
