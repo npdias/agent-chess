@@ -13,6 +13,7 @@ const deriveBalanceOfPower = appModule.deriveBalanceOfPower ?? (() => ({}));
 const hasAgentJoined = appModule.hasAgentJoined ?? (() => false);
 const shouldCompactMoveHistory = appModule.shouldCompactMoveHistory ?? (() => false);
 const selectThoughtTicker = appModule.selectThoughtTicker ?? (() => []);
+const buildAgentHandoffPrompt = appModule.buildAgentHandoffPrompt ?? (() => '');
 
 test('maps FEN piece placement into 64 board squares', () => {
   const board = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
@@ -357,6 +358,25 @@ test('keeps live thought ticker inside existing decision surface', async () => {
   assert.match(css, /\.thought-summary\s*\{[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/);
 });
 
+test('builds a self-contained agent handoff prompt around the fresh join link', () => {
+  const joinUrl = 'https://chess.example/agent/join?ticket=single-use-secret';
+  const prompt = buildAgentHandoffPrompt(joinUrl);
+  assert.equal(prompt.split(joinUrl).length - 1, 1);
+  for (const expected of [
+    'Open this Agent Chess link immediately',
+    'connection.wsUrl',
+    'match.start',
+    'turn.start',
+    'moves.list',
+    'moves.list_all',
+    'trace.publish',
+    'move.submit',
+    'game.end',
+    'WEBSOCKET_CAPABILITY_REQUIRED',
+    'Never publish private chain-of-thought',
+  ]) assert.match(prompt, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
 test('uses spectator-first hierarchy while preserving match controls', async () => {
   const [html, app, css] = await Promise.all([
     readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
@@ -367,11 +387,15 @@ test('uses spectator-first hierarchy while preserving match controls', async () 
   assert.match(html, /id="decision-brief"/);
   assert.match(html, /<details class="technical-activity"/);
   assert.match(html, /<details class="steering-details"/);
-  assert.match(html, /Copy agent link/);
+  assert.match(html, /id="copy-agent-prompt"[^>]*>Copy full prompt</);
+  assert.match(html, /id="copy-agent-link"[^>]*>Copy link only</);
+  assert.doesNotMatch(html, /id="connector-how"/);
   assert.match(html, /id="copy-agent-link"/);
   assert.match(html, /id="copy-command"/);
   for (const id of ['lifecycle-action', 'download-match', 'share-match', 'focus-mode', 'copy-pgn', 'moves']) assert.match(html, new RegExp(`id="${id}"`));
   assert.match(app, /buildAgentInviteUrl\(location\.origin, session\.joinPath\)/);
+  assert.match(app, /copy-agent-prompt.*addEventListener/s);
+  assert.match(app, /buildAgentHandoffPrompt\(inviteUrl\)/);
   assert.match(app, /copy-agent-link.*addEventListener/s);
   assert.match(app, /connector\.classList\.toggle\('connected'/);
   assert.doesNotMatch(html, /id="connect-command">[^<]+ticket=/);
@@ -446,7 +470,7 @@ test('moves preserved secondary controls into one internally scrolling Match too
   assert.match(dialog, /id="close-match-tools"/);
   assert.match(html, /How agents connect/);
   assert.match(app, /match-tools-button.*showModal/s);
-  assert.match(app, /connector-how.*showModal/s);
+  assert.doesNotMatch(app, /connector-how.*showModal/s);
   assert.match(css, /#match-tools-dialog\s*\{[^}]*max-height:\s*calc\(100dvh\s*-\s*32px\)[^}]*overflow-y:\s*auto/);
 });
 
@@ -487,7 +511,8 @@ test('collapses connected onboarding to a slim status row', async () => {
   assert.match(app, /const agentHasJoined = hasAgentJoined\(match\)/);
   assert.match(app, /connector\.hidden = !ownsAgentSeat \|\| summary\.review/);
   assert.match(app, /connector\.classList\.toggle\('connected', agentHasJoined\)/);
-  assert.match(app, /connector-how'\)\.hidden = agentHasJoined/);
+  assert.match(app, /copy-agent-prompt'\)\.hidden = Boolean\(match\.connected\) \|\| summary\.review/);
+  assert.match(app, /copy-agent-link'\)\.hidden = Boolean\(match\.connected\) \|\| summary\.review/);
   assert.match(app, /connector-feedback'\)\.hidden = agentHasJoined/);
   assert.match(css, /\.connector-card\.connected\s*\{[^}]*display:\s*flex[^}]*min-height:\s*0[^}]*padding:\s*8px 10px/);
 });

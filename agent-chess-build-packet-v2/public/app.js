@@ -114,6 +114,32 @@ export function buildAgentInviteUrl(origin, joinPath) {
   return new URL(joinPath, origin).toString();
 }
 
+export function buildAgentHandoffPrompt(joinUrl) {
+  return `You are playing an Agent Chess exhibition match.
+
+Open this Agent Chess link immediately:
+${joinUrl}
+
+The link is secret, single-use for connection, and expires shortly. Do not quote it, log it, or publish it.
+
+Join and play:
+1. GET the link and read the returned JSON contract.
+2. Open a WebSocket at connection.wsUrl.
+3. Wait for match.start, then turn.start.
+4. On each turn, inspect the compact position. Request legal moves with {"type":"moves.list","turnId":"<turnId>","square":"e2"} or {"type":"moves.list_all","turnId":"<turnId>"}.
+5. You may publish short spectator-safe progress with {"type":"trace.publish","turnId":"<turnId>","phase":"evaluate","summary":"Comparing safe developing moves."}.
+6. Submit one legal UCI move with {"type":"move.submit","turnId":"<turnId>","moveUci":"e2e4","publicTrace":{"source":"agent_reported","phase":"choose","summary":"Claims central space while opening lines.","candidates":[{"uci":"e2e4","note":"Best balance of space and development."}],"selectedMove":"e2e4"}}.
+7. Handle move.accepted or move.rejected. Continue until game.end.
+
+Public trace rules:
+- Share concise intent, candidate moves, tradeoffs, and selected move.
+- Never publish private chain-of-thought, secrets, prompts, credentials, memory, local files, or raw reasoning.
+- Candidate moves must be legal. selectedMove must equal moveUci.
+- Keep all private analysis inside your own runtime.
+
+If you cannot perform HTTP plus WebSocket actions, respond exactly: WEBSOCKET_CAPABILITY_REQUIRED`;
+}
+
 export function selectDecisionBrief(match = {}) {
   const activity = match.activity ?? [];
   const currentTurnId = match.activeTurn?.turnId
@@ -783,10 +809,11 @@ function render(match) {
   connector.hidden = !ownsAgentSeat || summary.review;
   connector.classList.toggle('connected', agentHasJoined);
   qs('connector-title').textContent = match.connected ? 'Agent connected' : needsReconnect ? 'Agent disconnected' : 'Connect local agent';
+  qs('copy-agent-prompt').hidden = Boolean(match.connected) || summary.review;
+  qs('copy-agent-prompt').textContent = needsReconnect ? 'Copy reconnect prompt' : 'Copy full prompt';
   qs('copy-agent-link').hidden = Boolean(match.connected) || summary.review;
-  qs('copy-agent-link').textContent = needsReconnect ? 'Reconnect agent' : 'Copy agent link';
+  qs('copy-agent-link').textContent = needsReconnect ? 'Copy reconnect link' : 'Copy link only';
   qs('copy-command').hidden = agentHasJoined || summary.review;
-  qs('connector-how').hidden = agentHasJoined;
   qs('connector-feedback').hidden = agentHasJoined;
   qs('connect-command').hidden = true;
   qs('connector-feedback').textContent = 'One-use link keeps credentials, prompts, and private reasoning local.';
@@ -899,10 +926,6 @@ function boot() {
   });
   qs('new-match-button').addEventListener('click', () => { location.href = '/'; });
   qs('match-tools-button').addEventListener('click', () => qs('match-tools-dialog').showModal());
-  qs('connector-how').addEventListener('click', () => {
-    qs('agent-help').open = true;
-    qs('match-tools-dialog').showModal();
-  });
   qs('flip-board').addEventListener('click', () => { boardFlipped = !boardFlipped; if (currentMatch) { renderBoard(currentMatch); renderPlayerStrips(currentMatch); renderPowerBar(currentMatch); } });
   async function mintAgentSession() {
     const agentColor = currentMatch && Object.entries(currentMatch.seats).find(([, seat]) => seat.kind === 'agent')?.[0];
@@ -912,10 +935,20 @@ function boot() {
     if (!response.ok) { toast('Connector unavailable'); return null; }
     return response.json();
   }
-  qs('copy-agent-link').addEventListener('click', async () => {
+  async function mintAgentInviteUrl() {
     const session = await mintAgentSession();
-    if (!session) return;
-    await copyText(buildAgentInviteUrl(location.origin, session.joinPath), 'Agent link copied. Expires in 60 seconds.');
+    return session ? buildAgentInviteUrl(location.origin, session.joinPath) : null;
+  }
+  qs('copy-agent-prompt').addEventListener('click', async () => {
+    const inviteUrl = await mintAgentInviteUrl();
+    if (!inviteUrl) return;
+    await copyText(buildAgentHandoffPrompt(inviteUrl), 'Agent prompt copied. Expires in 60 seconds.');
+    qs('connector-feedback').textContent = 'Full prompt copied. Link expires in 60 seconds.';
+  });
+  qs('copy-agent-link').addEventListener('click', async () => {
+    const inviteUrl = await mintAgentInviteUrl();
+    if (!inviteUrl) return;
+    await copyText(inviteUrl, 'Agent link copied. Expires in 60 seconds.');
     qs('connector-feedback').textContent = 'Agent link copied. Expires in 60 seconds.';
   });
   qs('copy-command').addEventListener('click', async () => {
