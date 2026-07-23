@@ -143,26 +143,28 @@ export function selectDecisionBrief(match = {}) {
   const activity = match.activity ?? [];
   const currentTurnId = match.activeTurn?.turnId
     ?? [...activity].reverse().find((entry) => entry?.type === 'turn.start')?.turnId;
-  const decision = [...activity].reverse().find((entry) => (
+  const isPublicDecision = (entry) => (
     entry?.type === 'agent.decision'
     && entry?.actor === 'agent'
     && DISCLOSURE_LABELS[entry?.source]
-    && (!currentTurnId || entry.turnId === currentTurnId)
-  ));
+  );
+  const currentDecision = [...activity].reverse().find((entry) => isPublicDecision(entry) && (!currentTurnId || entry.turnId === currentTurnId));
+  const decision = currentDecision ?? [...activity].reverse().find(isPublicDecision);
   if (decision) return {
     state: 'decision',
     intent: decision.summary?.trim() || 'Agent published a structured decision.',
     candidates: Array.isArray(decision.candidates) ? decision.candidates.slice(0, 4).map(({ uci, note }) => ({ uci, note })) : [],
     selectedMove: decision.selectedMove ?? '',
-    confidence: decision.confidence,
-    elapsedMs: decision.elapsedMs,
-    disclosure: DISCLOSURE_LABELS[decision.source],
+    ...(typeof decision.confidence === 'number' ? { confidence: decision.confidence } : {}),
+    ...(Number.isInteger(decision.elapsedMs) ? { elapsedMs: decision.elapsedMs } : {}),
+    disclosure: currentDecision ? DISCLOSURE_LABELS[decision.source] : `Last move · ${DISCLOSURE_LABELS[decision.source]}`,
+    recency: currentDecision ? 'current' : 'previous',
   };
-  if (match.status === 'failed') return { state: 'failed', intent: 'Match failed before an agent decision was published.', candidates: [], selectedMove: '', disclosure: 'System status' };
+  if (match.status === 'failed') return { state: 'failed', intent: 'Match failed before an agent decision was published.', candidates: [], selectedMove: '', disclosure: 'System status', recency: 'none' };
   const phase = deriveTurnPhase(match);
   const phaseCopy = { observe: 'observing', probe: 'probing', evaluate: 'evaluating', choose: 'choosing', submit: 'submitting' };
-  if (phase.key !== 'waiting' && phase.key !== 'complete') return { state: 'working', intent: `Agent is ${phaseCopy[phase.key] ?? 'working on'} current position.`, candidates: [], selectedMove: '', disclosure: 'Phase status' };
-  return { state: 'empty', intent: 'No public agent decision yet.', candidates: [], selectedMove: '', disclosure: 'No disclosure' };
+  if (phase.key !== 'waiting' && phase.key !== 'complete') return { state: 'working', intent: `Agent is ${phaseCopy[phase.key] ?? 'working on'} current position.`, candidates: [], selectedMove: '', disclosure: 'Phase status', recency: 'current' };
+  return { state: 'empty', intent: 'No public agent decision yet.', candidates: [], selectedMove: '', disclosure: 'No disclosure', recency: 'none' };
 }
 
 export function selectThoughtTicker(match = {}, limit = 3) {
@@ -670,6 +672,7 @@ function renderTrace(match) {
 
 function renderDecisionBrief(match) {
   const brief = selectDecisionBrief(match);
+  qs('decision-title').textContent = brief.recency === 'previous' ? 'Last move' : 'Agent decision';
   qs('decision-intent').textContent = brief.intent;
   qs('decision-disclosure').textContent = brief.disclosure;
   const ticker = qs('thought-ticker');

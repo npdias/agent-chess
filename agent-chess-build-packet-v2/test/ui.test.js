@@ -301,16 +301,16 @@ test('selects current structured decision without exposing private reasoning', (
     { type: 'agent.trace', source: 'agent', phase: 'evaluate', summary: 'Private scratchpad: attack h7', reasoning: 'hidden' },
     { type: 'agent.decision', source: 'agent_reported', actor: 'agent', phase: 'choose', summary: 'Develop king-side pressure.', selectedMove: 'g1f3', candidates: [{ uci: 'g1f3', note: 'Develop' }, { uci: 'd2d4', note: 'Center' }], confidence: 0.8, elapsedMs: 1_500, disclosure: 'public' },
   ] }), {
-    state: 'decision', intent: 'Develop king-side pressure.', candidates: [{ uci: 'g1f3', note: 'Develop' }, { uci: 'd2d4', note: 'Center' }], selectedMove: 'g1f3', confidence: 0.8, elapsedMs: 1_500, disclosure: 'Agent reported',
+    state: 'decision', intent: 'Develop king-side pressure.', candidates: [{ uci: 'g1f3', note: 'Develop' }, { uci: 'd2d4', note: 'Center' }], selectedMove: 'g1f3', confidence: 0.8, elapsedMs: 1_500, disclosure: 'Agent reported', recency: 'current',
   });
   assert.deepEqual(selectDecisionBrief({ status: 'failed', game: { gameOver: false }, activity: [] }), {
-    state: 'failed', intent: 'Match failed before an agent decision was published.', candidates: [], selectedMove: '', disclosure: 'System status',
+    state: 'failed', intent: 'Match failed before an agent decision was published.', candidates: [], selectedMove: '', disclosure: 'System status', recency: 'none',
   });
   assert.deepEqual(selectDecisionBrief({ activity: [{ source: 'agent', phase: 'evaluate', summary: 'Private chain of thought' }] }), {
-    state: 'working', intent: 'Agent is evaluating current position.', candidates: [], selectedMove: '', disclosure: 'Phase status',
+    state: 'working', intent: 'Agent is evaluating current position.', candidates: [], selectedMove: '', disclosure: 'Phase status', recency: 'current',
   });
   assert.deepEqual(selectDecisionBrief({ activity: [] }), {
-    state: 'empty', intent: 'No public agent decision yet.', candidates: [], selectedMove: '', disclosure: 'No disclosure',
+    state: 'empty', intent: 'No public agent decision yet.', candidates: [], selectedMove: '', disclosure: 'No disclosure', recency: 'none',
   });
   assert.deepEqual(selectDecisionBrief({
     activeTurn: { turnId: 'turn-2' },
@@ -320,7 +320,32 @@ test('selects current structured decision without exposing private reasoning', (
       { type: 'agent.trace', turnId: 'turn-2', actor: 'agent', source: 'agent_reported', phase: 'evaluate', summary: 'Evaluating current move.' },
     ],
   }), {
-    state: 'working', intent: 'Agent is evaluating current position.', candidates: [], selectedMove: '', disclosure: 'Phase status',
+    state: 'decision', intent: 'Previous move.', candidates: [], selectedMove: 'a2a3', disclosure: 'Last move · Agent reported', recency: 'previous',
+  });
+});
+
+test('current public decision wins over the last committed decision', () => {
+  assert.deepEqual(selectDecisionBrief({
+    activeTurn: { turnId: 'turn-2' },
+    activity: [
+      { type: 'agent.decision', turnId: 'turn-1', source: 'agent_reported', actor: 'agent', summary: 'Old move.', selectedMove: 'a2a3' },
+      { type: 'agent.decision', turnId: 'turn-2', source: 'provider_summary', actor: 'agent', summary: 'Current move.', selectedMove: 'g1f3', candidates: [{ uci: 'g1f3', note: 'Develop' }], confidence: 0.9, elapsedMs: 800 },
+    ],
+  }), {
+    state: 'decision', intent: 'Current move.', candidates: [{ uci: 'g1f3', note: 'Develop' }], selectedMove: 'g1f3', confidence: 0.9, elapsedMs: 800, disclosure: 'Provider summary', recency: 'current',
+  });
+});
+
+test('excludes private or unsupported decisions while retaining explicit working status', () => {
+  assert.deepEqual(selectDecisionBrief({
+    activeTurn: { turnId: 'turn-2' },
+    activity: [
+      { type: 'agent.decision', turnId: 'turn-1', source: 'private', actor: 'agent', summary: 'Private reasoning.', selectedMove: 'a2a3' },
+      { type: 'agent.decision', turnId: 'turn-1', source: 'agent_reported', actor: 'connector', summary: 'Wrong actor.', selectedMove: 'b2b3' },
+      { type: 'agent.trace', turnId: 'turn-2', source: 'agent_reported', actor: 'agent', phase: 'evaluate', summary: 'Checking current move.' },
+    ],
+  }), {
+    state: 'working', intent: 'Agent is evaluating current position.', candidates: [], selectedMove: '', disclosure: 'Phase status', recency: 'current',
   });
 });
 

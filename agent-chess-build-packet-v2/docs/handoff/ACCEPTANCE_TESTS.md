@@ -126,6 +126,8 @@ node --test --test-concurrency=1 test/agent-access-e2e.test.js
 
 Proof covers a REST agent as White plus hosted-MCP agent as Black against fake engines. Each agent completes two turns; REST same-move replay returns `replayed: true`; MCP publishes bounded public status plus decision; snapshot/export omit invitation, durable-session, seat capability secrets. A bounded decision deadline produces authoritative terminal `failed` result read through REST.
 
+During a later active turn, the fixed Agent decision card prefers a current-turn public committed decision. If none exists, it keeps the latest allowed committed decision visible as `Last move · <disclosure source>`, including candidates, selected move, confidence, and elapsed time. It must never relabel that fallback as current thought or render private/unsupported disclosures.
+
 ## L. Desktop access proof
 
 At `1280x720`, create Agent vs Computer, mint/connect agent invitation, advance at least two plies, then verify:
