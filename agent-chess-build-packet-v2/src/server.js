@@ -2,12 +2,14 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import packageJson from '../package.json' with { type: 'json' };
 import { WebSocketServer, WebSocket } from 'ws';
 import { MatchSession } from './match.js';
 import { StockfishEngine } from './stockfish.js';
 import { createAgentAccessService } from './agent-access.js';
+import { createAgentChessMcpServer } from './mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { AGENT_REST_ACTIONS, MESSAGE_TYPES, parseClientMessage } from './protocol.js';
 
 function errorCode(error) {
@@ -128,10 +130,89 @@ export function createAgentChessServer({
   const seatByToken = new Map();
   const seatByTicket = new Map();
   const agentAccess = createAgentAccessService({ now: ticketNow });
+  const mcpSessions = new Map();
   const terminalDelivered = new WeakSet();
   const agentWss = new WebSocketServer({ noServer: true });
   const eventWss = new WebSocketServer({ noServer: true });
   let httpServer;
+
+  function allowedMcpOrigin(request) {
+    const origin = request.headers.origin;
+    if (!origin) return true;
+    try {
+      const parsed = new URL(origin);
+      const configured = process.env.AGENT_CHESS_PUBLIC_ORIGIN ? new URL(process.env.AGENT_CHESS_PUBLIC_ORIGIN).host : null;
+      const requestHost = request.headers.host;
+      return ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)
+        || parsed.host === configured || parsed.host === requestHost;
+    } catch {
+      return false;
+    }
+  }
+
+  async function closeMcpSession(sessionId) {
+    const binding = mcpSessions.get(sessionId);
+    if (!binding) return;
+    mcpSessions.delete(sessionId);
+    try { await binding.server.close(); } catch {}
+    try { agentAccess.closeSession(binding.sessionToken); } catch {}
+  }
+
+  async function handleMcp(request, response, url) {
+    if (!['POST', 'GET', 'DELETE'].includes(request.method)) return false;
+    if (!allowedMcpOrigin(request)) {
+      sendJson(response, 403, { error: 'ORIGIN_NOT_ALLOWED' });
+      return true;
+    }
+    const sessionId = request.headers['mcp-session-id'];
+    if (typeof sessionId === 'string') {
+      const binding = mcpSessions.get(sessionId);
+      if (!binding) {
+        sendJson(response, 404, { error: 'MCP_SESSION_NOT_FOUND' });
+        return true;
+      }
+      await binding.transport.handleRequest(request, response);
+      if (request.method === 'DELETE') await closeMcpSession(sessionId);
+      return true;
+    }
+    if (request.method !== 'POST') {
+      sendJson(response, 400, { error: 'MCP_SESSION_REQUIRED' });
+      return true;
+    }
+    let claimed;
+    try {
+      claimed = agentAccess.claimInvitation(url.searchParams.get('ticket'));
+      seatByTicket.delete(url.searchParams.get('ticket'));
+    } catch (error) {
+      sendJson(response, error.message === 'INVITATION_EXPIRED' ? 410 : 409, { error: error.message });
+      return true;
+    }
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID });
+    const server = createAgentChessMcpServer({
+      access: agentAccess,
+      sessionToken: claimed.sessionToken,
+      onMoveSubmitted: async () => {
+        const record = matches.get(claimed.matchId);
+        if (!record) return;
+        clearDecisionDeadline(record);
+        record.deadlineTurnId = null;
+        broadcastState(record);
+        await pauseTurnTransition(record);
+        await advance(record);
+      },
+    });
+    transport.onclose = () => {
+      if (transport.sessionId) closeMcpSession(transport.sessionId).catch(() => undefined);
+    };
+    await server.connect(transport);
+    await transport.handleRequest(request, response);
+    if (transport.sessionId) {
+      mcpSessions.set(transport.sessionId, { transport, server, sessionToken: claimed.sessionToken });
+    } else {
+      try { agentAccess.closeSession(claimed.sessionToken); } catch {}
+    }
+    return true;
+  }
   function removeExpiredTickets() {
     for (const [ticket, binding] of seatByTicket) {
       if (binding.expiresAt <= ticketNow()) seatByTicket.delete(ticket);
@@ -153,7 +234,7 @@ export function createAgentChessServer({
       connection: {
         wsUrl: `${protocol}//${host}/agent?ticket=${encodeURIComponent(ticket)}`,
         rest: { claimUrl: `${request.socket.encrypted ? 'https:' : 'http:'}//${host}/api/agent/claim?ticket=${encodeURIComponent(ticket)}`, actions: AGENT_REST_ACTIONS, schemas: REST_SCHEMAS },
-        mcp: { url: `${request.socket.encrypted ? 'https:' : 'http:'}//${host}/mcp/agent?ticket=${encodeURIComponent(ticket)}` },
+        mcp: { url: `${request.socket.encrypted ? 'https:' : 'http:'}//${host}/mcp?ticket=${encodeURIComponent(ticket)}` },
         websocket: { url: `${protocol}//${host}/agent?ticket=${encodeURIComponent(ticket)}` },
       },
       instructions: {
@@ -212,7 +293,7 @@ export function createAgentChessServer({
       expiresAt: new Date(invitation.expiresAt).toISOString(),
       connection: {
         rest: { claimUrl: `${protocol}//${host}/api/agent/claim?ticket=${ticket}`, actions: AGENT_REST_ACTIONS, schemas: REST_SCHEMAS },
-        mcp: { url: `${protocol}//${host}/mcp/agent?ticket=${ticket}` },
+        mcp: { url: `${protocol}//${host}/mcp?ticket=${ticket}` },
         websocket: { url: `${wsProtocol}//${host}/agent?ticket=${ticket}` },
       },
       schemas: REST_SCHEMAS,
@@ -755,6 +836,7 @@ export function createAgentChessServer({
       httpServer = http.createServer(async (request, response) => {
         const url = new URL(request.url, `http://${request.headers.host ?? 'localhost'}`);
         try {
+          if (url.pathname === '/mcp' && await handleMcp(request, response, url)) return;
           if (await handleApi(request, response, url)) return;
           if (request.method === 'GET' && await serveStatic(response, url.pathname)) return;
           sendJson(response, 404, { error: 'NOT_FOUND' });
@@ -813,6 +895,7 @@ export function createAgentChessServer({
     },
 
     async stop() {
+      await Promise.all([...mcpSessions.keys()].map((sessionId) => closeMcpSession(sessionId)));
       const engines = new Set();
       for (const record of matches.values()) {
         clearDecisionDeadline(record);
