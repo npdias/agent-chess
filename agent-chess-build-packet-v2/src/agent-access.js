@@ -99,6 +99,15 @@ export function createAgentAccessService({ now = () => Date.now(), tokenFactory 
       return { accepted: true, turnId, publicTrace: decision };
     },
 
+    publishStatus(sessionToken, { turnId, publicTrace, ...trace } = {}) {
+      const binding = bindingFor(sessionToken);
+      if (!activeTurnFor(binding) || activeTurnFor(binding).turnId !== turnId) throw new Error('STALE_TURN');
+      const parsed = parsePublicTrace(publicTrace ?? trace);
+      const status = { source: parsed.source, phase: parsed.phase, summary: parsed.summary };
+      const entry = binding.session.publishTrace({ turnId, ...status });
+      return { accepted: true, turnId, publicTrace: { ...status, candidates: [], selectedMove: null }, activity: entry };
+    },
+
     submitMove(sessionToken, { turnId, moveUci, publicTrace } = {}) {
       const binding = bindingFor(sessionToken);
       const last = binding.lastAccepted;

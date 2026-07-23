@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createAgentChessServer } from '../src/server.js';
@@ -41,6 +42,18 @@ function content(result) {
   return JSON.parse(text);
 }
 
+function rawMcpPost(address, ticket, headers, body) {
+  const target = new URL(address.httpUrl);
+  return new Promise((resolve, reject) => {
+    const request = http.request({ hostname: target.hostname, port: target.port, method: 'POST', path: `/mcp?ticket=${encodeURIComponent(ticket)}`, headers }, (response) => {
+      response.resume();
+      response.once('end', () => resolve(response));
+    });
+    request.once('error', reject);
+    request.end(body);
+  });
+}
+
 test('MCP invitation claims once, exposes deterministic tools, and delegates a public move flow', async () => {
   const server = createAgentChessServer();
   const address = await server.start(0);
@@ -74,6 +87,13 @@ test('MCP invitation claims once, exposes deterministic tools, and delegates a p
       turnId: turn.turnId, source: 'agent_reported', phase: 'probe', summary: 'Checking forcing moves.',
     } }));
     assert.equal(status.publicTrace.summary, 'Checking forcing moves.');
+    const publicState = await fetch(`${address.httpUrl}/api/matches/${created.matchId}`).then((response) => response.json());
+    const published = publicState.activity.find((entry) => entry.type === 'agent.trace' && entry.summary === 'Checking forcing moves.');
+    assert.deepEqual(published, {
+      type: 'agent.trace', source: 'agent_reported', actor: 'connector', kind: 'status', phase: 'probe',
+      turnId: turn.turnId, summary: 'Checking forcing moves.', candidates: [], selectedMove: null, at: published.at,
+    });
+    assert.equal(JSON.stringify(published).includes('reasoning'), false);
 
     const decision = content(await connected.client.callTool({ name: 'publish_decision', arguments: {
       turnId: turn.turnId, source: 'agent_reported', phase: 'choose', summary: 'Develops king side safely.',
@@ -109,19 +129,44 @@ test('MCP rejects expired invitation tickets', async () => {
   }
 });
 
-test('agent connection advertises hosted MCP endpoint and rejects foreign origins', async () => {
+test('agent connection advertises hosted MCP endpoint and rejects foreign origins even when Host matches', async () => {
   const server = createAgentChessServer();
   const address = await server.start(0);
   try {
     const created = await createMatch(address);
     const connection = await invite(address, created.capabilities.white);
     assert.match(connection.connection.mcp.url, /\/mcp\?ticket=/);
-    const rejected = await fetch(`${address.httpUrl}/mcp?ticket=${encodeURIComponent(connection.ticket)}`, {
-      method: 'POST', headers: { origin: 'https://attacker.example', 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test', version: '1' } } }),
+    const rejected = await rawMcpPost(address, connection.ticket, { origin: 'https://attacker.example', host: 'attacker.example', 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test', version: '1' } } }));
+    assert.equal(rejected.statusCode, 403);
+    const nonHttpTicket = await invite(address, created.capabilities.white);
+    const nonHttp = await rawMcpPost(address, nonHttpTicket.ticket, { origin: 'ftp://localhost', 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test', version: '1' } } }));
+    assert.equal(nonHttp.statusCode, 403);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('MCP accepts only exact configured public origin', async () => {
+  const original = process.env.AGENT_CHESS_PUBLIC_ORIGIN;
+  process.env.AGENT_CHESS_PUBLIC_ORIGIN = 'https://agent-chess.example';
+  const server = createAgentChessServer();
+  const address = await server.start(0);
+  const initialize = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test', version: '1' } } });
+  try {
+    const created = await createMatch(address);
+    const acceptedTicket = await invite(address, created.capabilities.white);
+    const accepted = await fetch(`${address.httpUrl}/mcp?ticket=${encodeURIComponent(acceptedTicket.ticket)}`, {
+      method: 'POST', headers: { origin: 'https://agent-chess.example', 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: initialize,
+    });
+    assert.notEqual(accepted.status, 403);
+    const rejectedTicket = await invite(address, created.capabilities.white);
+    const rejected = await fetch(`${address.httpUrl}/mcp?ticket=${encodeURIComponent(rejectedTicket.ticket)}`, {
+      method: 'POST', headers: { origin: 'http://agent-chess.example', 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: initialize,
     });
     assert.equal(rejected.status, 403);
   } finally {
+    if (original === undefined) delete process.env.AGENT_CHESS_PUBLIC_ORIGIN;
+    else process.env.AGENT_CHESS_PUBLIC_ORIGIN = original;
     await server.stop();
   }
 });

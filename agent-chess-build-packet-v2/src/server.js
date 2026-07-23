@@ -141,10 +141,10 @@ export function createAgentChessServer({
     if (!origin) return true;
     try {
       const parsed = new URL(origin);
-      const configured = process.env.AGENT_CHESS_PUBLIC_ORIGIN ? new URL(process.env.AGENT_CHESS_PUBLIC_ORIGIN).host : null;
-      const requestHost = request.headers.host;
-      return ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)
-        || parsed.host === configured || parsed.host === requestHost;
+      const configured = process.env.AGENT_CHESS_PUBLIC_ORIGIN;
+      if (configured) return parsed.origin === new URL(configured).origin;
+      return ['http:', 'https:'].includes(parsed.protocol)
+        && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
     } catch {
       return false;
     }
@@ -191,6 +191,10 @@ export function createAgentChessServer({
     const server = createAgentChessMcpServer({
       access: agentAccess,
       sessionToken: claimed.sessionToken,
+      onStatusPublished: () => {
+        const record = matches.get(claimed.matchId);
+        if (record) broadcastState(record);
+      },
       onMoveSubmitted: async () => {
         const record = matches.get(claimed.matchId);
         if (!record) return;
@@ -204,12 +208,19 @@ export function createAgentChessServer({
     transport.onclose = () => {
       if (transport.sessionId) closeMcpSession(transport.sessionId).catch(() => undefined);
     };
-    await server.connect(transport);
-    await transport.handleRequest(request, response);
-    if (transport.sessionId) {
-      mcpSessions.set(transport.sessionId, { transport, server, sessionToken: claimed.sessionToken });
-    } else {
-      try { agentAccess.closeSession(claimed.sessionToken); } catch {}
+    let stored = false;
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(request, response);
+      if (transport.sessionId) {
+        mcpSessions.set(transport.sessionId, { transport, server, sessionToken: claimed.sessionToken });
+        stored = true;
+      }
+    } finally {
+      if (!stored) {
+        try { await server.close(); } catch {}
+        try { agentAccess.closeSession(claimed.sessionToken); } catch {}
+      }
     }
     return true;
   }

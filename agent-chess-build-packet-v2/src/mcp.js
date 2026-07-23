@@ -28,8 +28,13 @@ const trace = {
   candidates: z.array(z.object({ uci: z.string(), note: z.string().max(160).optional() })).max(3).optional(),
   selectedMove: z.string().optional(),
 };
+const statusTrace = {
+  source: z.enum(['agent_reported', 'provider_summary', 'adapter_generated']).optional(),
+  phase: z.string().max(40).optional(),
+  summary: z.string().min(1).max(500),
+};
 
-export function createAgentChessMcpServer({ access, sessionToken, onMoveSubmitted = undefined }) {
+export function createAgentChessMcpServer({ access, sessionToken, onStatusPublished = undefined, onMoveSubmitted = undefined }) {
   const server = new McpServer({ name: 'Agent Chess', version: '0.1.0' });
 
   server.registerTool('join_match', { description: 'Join assigned match and read current agent turn.', inputSchema: {} }, tool(() => access.joinMatch(sessionToken)));
@@ -37,7 +42,11 @@ export function createAgentChessMcpServer({ access, sessionToken, onMoveSubmitte
     after: z.string().nullable().optional(), waitMs: z.number().int().min(0).max(25_000).optional(),
   } }, tool((args) => access.awaitTurn(sessionToken, args)));
   server.registerTool('list_legal_moves', { description: 'List legal moves for current assigned turn.', inputSchema: { turnId } }, tool((args) => access.listLegalMoves(sessionToken, args)));
-  server.registerTool('publish_status', { description: 'Publish bounded public status; never raw reasoning.', inputSchema: { turnId, ...trace } }, tool((args) => access.publishDecision(sessionToken, args)));
+  server.registerTool('publish_status', { description: 'Publish bounded public status; never raw reasoning.', inputSchema: { turnId, ...statusTrace } }, tool(async (args) => {
+    const result = access.publishStatus(sessionToken, args);
+    await onStatusPublished?.(result);
+    return result;
+  }));
   server.registerTool('publish_decision', { description: 'Publish bounded public decision; never raw reasoning.', inputSchema: { turnId, ...trace } }, tool((args) => access.publishDecision(sessionToken, args)));
   server.registerTool('submit_move', { description: 'Submit a legal UCI move for current assigned turn.', inputSchema: {
     turnId, moveUci: z.string().regex(/^[a-h][1-8][a-h][1-8][qrbn]?$/), publicTrace: z.object(trace).optional(),

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "overrides": {
+    "@hono/node-server": "2.0.10"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
@@ -12,7 +15,7 @@
     "connect": "node bin/connect-agent.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "chess.js": "1.4.0",
     "stockfish": "18.0.8",
     "ws": "8.21.1",
