@@ -115,6 +115,16 @@ export function createAgentRequest(turn, action) {
   throw new Error('INVALID_AGENT_ACTION');
 }
 
+export function publicStatusTraceForAction(action = {}) {
+  if ((!action.probeSquare && !action.requestAllMoves) || !action.trace?.summary) return null;
+  return {
+    source: action.trace.source,
+    kind: 'status',
+    phase: action.trace.phase,
+    summary: action.trace.summary,
+  };
+}
+
 export function validateLocalCandidate(turn, moveUci) {
   if (typeof moveUci !== 'string' || !UCI_PATTERN.test(moveUci)) throw new Error('MOVE_NOT_LEGAL');
   const moves = [

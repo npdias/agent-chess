@@ -9,6 +9,7 @@ import {
   exchangeAgentSession,
   parseAgentAction,
   parseAgentOutput,
+  publicStatusTraceForAction,
   runCommandAgent,
   validateLocalCandidate,
 } from '../src/connector.js';
@@ -130,6 +131,21 @@ test('parses a progressive piece probe action', () => {
 
 test('parses an explicit full move-list request', () => {
   assert.deepEqual(parseAgentAction('{"requestAllMoves":true}'), { requestAllMoves: true, trace: null });
+});
+
+test('publishes bounded agent summaries for probe actions without precommitting candidates', () => {
+  assert.deepEqual(publicStatusTraceForAction({
+    requestAllMoves: true,
+    trace: {
+      source: 'agent_reported', kind: 'decision', phase: 'probe',
+      summary: 'Comparing forcing moves.',
+      candidates: [{ uci: 'e2e4', note: 'Private until commit.' }], selectedMove: 'e2e4',
+    },
+  }), {
+    source: 'agent_reported', kind: 'status', phase: 'probe', summary: 'Comparing forcing moves.',
+  });
+  assert.equal(publicStatusTraceForAction({ moveUci: 'e2e4', trace: { summary: 'Choose e4.' } }), null);
+  assert.equal(publicStatusTraceForAction({ probeSquare: 'e2', trace: null }), null);
 });
 
 test('maps explicit full-list action to a turn-scoped outbound request', () => {

@@ -55,8 +55,8 @@ const DISCLOSURE_LABELS = {
   adapter_generated: 'Adapter generated',
 };
 
-const BOARD_SETTLE_MS = 280;
-const CAPTURE_FADE_MS = 180;
+const BOARD_SETTLE_MS = 460;
+const CAPTURE_FADE_MS = 300;
 
 export function deriveTurnPhase(match = {}) {
   if (match.game?.gameOver || ['completed', 'aborted', 'failed'].includes(match.status)) return { key: 'complete', label: 'Match complete' };
@@ -136,6 +136,25 @@ export function selectDecisionBrief(match = {}) {
   const phaseCopy = { observe: 'observing', probe: 'probing', evaluate: 'evaluating', choose: 'choosing', submit: 'submitting' };
   if (phase.key !== 'waiting' && phase.key !== 'complete') return { state: 'working', intent: `Agent is ${phaseCopy[phase.key] ?? 'working on'} current position.`, candidates: [], selectedMove: '', disclosure: 'Phase status' };
   return { state: 'empty', intent: 'No public agent decision yet.', candidates: [], selectedMove: '', disclosure: 'No disclosure' };
+}
+
+export function selectThoughtTicker(match = {}, limit = 3) {
+  const allowedSystemTypes = new Set(['turn.start', 'moves.list', 'moves.list_all', 'history.list', 'move.validate']);
+  return activeTurnActivity(match)
+    .filter((entry) => (
+      String(entry?.summary ?? '').trim()
+      && (allowedSystemTypes.has(entry.type)
+        || (['agent.trace', 'agent.decision'].includes(entry.type) && DISCLOSURE_LABELS[entry.source]))
+    ))
+    .map((entry) => {
+      const phaseKey = PHASE_ALIASES[entry.phase] ?? entry.phase;
+      return {
+        phase: TURN_PHASES.find((item) => item.key === phaseKey)?.label ?? 'Status',
+        summary: entry.summary.trim(),
+        disclosure: DISCLOSURE_LABELS[entry.source] ?? 'Verified system',
+      };
+    })
+    .slice(-Math.max(0, limit));
 }
 
 export function selectActivityEntries(match = {}) {
@@ -309,7 +328,9 @@ export function buildExhibitionPayload({ matchup, color, skillLevel }) {
     opponent: { kind: matchup === 'human-agent' ? 'agent' : 'engine', name: matchup === 'human-agent' ? 'My agent' : 'Computer' },
     color,
     skillLevel: Number(skillLevel),
-    movetimeMs: 150,
+    movetimeMs: 500,
+    decisionDeadlineMs: 90_000,
+    turnPaceMs: 800,
   };
 }
 
@@ -630,6 +651,19 @@ function renderDecisionBrief(match) {
   const brief = selectDecisionBrief(match);
   qs('decision-intent').textContent = brief.intent;
   qs('decision-disclosure').textContent = brief.disclosure;
+  const ticker = qs('thought-ticker');
+  ticker.replaceChildren();
+  const tickerItems = selectThoughtTicker(match);
+  ticker.hidden = tickerItems.length === 0;
+  tickerItems.forEach((item, index, items) => {
+    const row = document.createElement('li');
+    row.className = `thought-item${index === items.length - 1 ? ' current' : ''}`;
+    const phase = document.createElement('strong'); phase.textContent = item.phase;
+    const summary = document.createElement('span'); summary.className = 'thought-summary'; summary.textContent = item.summary;
+    summary.title = `${item.disclosure}: ${item.summary}`;
+    row.append(phase, summary);
+    ticker.append(row);
+  });
   const candidates = qs('decision-candidates');
   candidates.replaceChildren();
   brief.candidates.forEach((candidate) => {

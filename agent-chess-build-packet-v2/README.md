@@ -99,6 +99,8 @@ npm run smoke:human -- --server http://127.0.0.1:3000 --color white --turns 3
 
 Caller owns credentials, prompts, secrets, private memory, local files, private reasoning. Service never requests them. Public exhibitions require concise structured `publicTrace` on agent moves; trace enters public activity/export. Private evaluation is move_only: agent `publicTrace` is suppressed and `trace.publish` rejected. Never publish secrets or private reasoning.
 
+Public exhibition UI matches use a 90-second agent decision budget, 500ms Stockfish move time, and an 800ms turn-transition pace. Private evaluation remains unpaced. Agent commands may publish bounded `trace.publish` summaries during probe/evaluate phases; the visible ticker shows at most three current-turn public summaries. Raw reasoning remains local.
+
 ## POC boundaries
 
 No accounts, no persistence, no ratings, no Elo mapping, no public matchmaking, MCP adapter, hosted model inference, deployment auth/rate limiting, no clocks, timeout adjudication, signed runner, or post-match analysis. Restart clears matches.

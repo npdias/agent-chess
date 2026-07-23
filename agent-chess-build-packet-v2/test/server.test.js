@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { spawn } from 'node:child_process';
 import { Chess } from 'chess.js';
 import WebSocket from 'ws';
-import { createAgentChessServer } from '../src/server.js';
+import { createAgentChessServer, normalizeTurnPaceMs } from '../src/server.js';
 import { runSmoke } from '../bin/smoke-human.js';
 import { formatActivity, shellQuote } from '../public/app.js';
 
@@ -108,6 +108,13 @@ test('publishes Stockfish evaluation without exposing engine internals', async (
   } finally {
     await server.stop();
   }
+});
+
+test('paces only public exhibitions and caps untrusted delay input', () => {
+  assert.equal(normalizeTurnPaceMs({ mode: 'exhibition', visibility: 'public' }, 800), 800);
+  assert.equal(normalizeTurnPaceMs({ mode: 'private_eval', visibility: 'private' }, 800), 0);
+  assert.equal(normalizeTurnPaceMs({ mode: 'exhibition', visibility: 'public' }, 50_000), 5_000);
+  assert.equal(normalizeTurnPaceMs({ mode: 'exhibition', visibility: 'public' }, -1), 0);
 });
 
 async function runReferenceConnectorFailure(address, created, command) {
@@ -364,6 +371,15 @@ test('agent invitation describes a valid single-use connection without leaking i
     assert.equal(contract.connection.wsUrl, `${address.wsUrl}${ticket.wsPath}`);
     assert.match(contract.instructions.actionOrder.join(' '), /open WebSocket.*match.start.*turn.start.*submit legal UCI/i);
     assert.match(contract.security.secretHandling, /secret.*expires.*single-use/i);
+    assert.deepEqual(contract.publicTrace.phases, ['observe', 'probe', 'evaluate', 'choose', 'submit']);
+    assert.deepEqual(contract.publicTrace.statusExample, {
+      type: 'trace.publish', turnId: '<turnId>', source: 'agent_reported',
+      phase: 'probe', summary: 'Comparing forcing moves and king safety.',
+    });
+    assert.deepEqual(contract.publicTrace.decisionExample.publicTrace, {
+      source: 'agent_reported', phase: 'choose', summary: 'Develops while protecting the king.',
+      candidates: [{ uci: 'g1f3', note: 'Development and king safety.' }], selectedMove: 'g1f3',
+    });
 
     const repeatedInvite = await fetch(`${address.httpUrl}${ticket.joinPath}`);
     assert.equal(repeatedInvite.status, 200);

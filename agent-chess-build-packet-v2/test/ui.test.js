@@ -12,6 +12,7 @@ const derivePostGameInterview = appModule.derivePostGameInterview ?? (() => ({})
 const deriveBalanceOfPower = appModule.deriveBalanceOfPower ?? (() => ({}));
 const hasAgentJoined = appModule.hasAgentJoined ?? (() => false);
 const shouldCompactMoveHistory = appModule.shouldCompactMoveHistory ?? (() => false);
+const selectThoughtTicker = appModule.selectThoughtTicker ?? (() => []);
 
 test('maps FEN piece placement into 64 board squares', () => {
   const board = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
@@ -277,7 +278,7 @@ test('builds agent versus computer setup payload without legacy fields', () => {
   assert.deepEqual(buildExhibitionPayload({ matchup: 'agent-engine', color: 'black', skillLevel: '9' }), {
     controller: { kind: 'agent', name: 'My agent' },
     opponent: { kind: 'engine', name: 'Computer' },
-    color: 'black', skillLevel: 9, movetimeMs: 150,
+    color: 'black', skillLevel: 9, movetimeMs: 500, decisionDeadlineMs: 90_000, turnPaceMs: 800,
   });
 });
 
@@ -321,6 +322,39 @@ test('selects current structured decision without exposing private reasoning', (
   }), {
     state: 'working', intent: 'Agent is evaluating current position.', candidates: [], selectedMove: '', disclosure: 'Phase status',
   });
+});
+
+test('selects three current-turn public thought summaries without private reasoning', () => {
+  assert.deepEqual(selectThoughtTicker({
+    activeTurn: { turnId: 'turn-2' },
+    activity: [
+      { type: 'agent.trace', turnId: 'turn-1', source: 'agent_reported', phase: 'choose', summary: 'Old decision.' },
+      { type: 'turn.start', turnId: 'turn-2', source: 'system', phase: 'observe', summary: 'Position ready' },
+      { type: 'agent.trace', turnId: 'turn-2', source: 'agent', phase: 'evaluate', summary: 'Private scratchpad.' },
+      { type: 'agent.trace', turnId: 'turn-2', source: 'agent_reported', phase: 'probe', summary: 'Comparing knight routes.' },
+      { type: 'moves.list', turnId: 'turn-2', source: 'system', phase: 'probe', summary: 'Listed 3 moves for g1' },
+      { type: 'agent.decision', turnId: 'turn-2', source: 'agent_reported', actor: 'agent', phase: 'choose', summary: 'Develop knight.' },
+    ],
+  }), [
+    { phase: 'Probe', summary: 'Comparing knight routes.', disclosure: 'Agent reported' },
+    { phase: 'Probe', summary: 'Listed 3 moves for g1', disclosure: 'Verified system' },
+    { phase: 'Choose', summary: 'Develop knight.', disclosure: 'Agent reported' },
+  ]);
+});
+
+test('keeps live thought ticker inside existing decision surface', async () => {
+  const [html, app, css] = await Promise.all([
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  assert.match(html, /id="thought-ticker"[^>]*aria-live="polite"/);
+  assert.match(app, /selectThoughtTicker\(match\)/);
+  assert.match(app, /ticker\.replaceChildren\(\)/);
+  assert.match(app, /ticker\.hidden = tickerItems\.length === 0/);
+  assert.match(css, /\.thought-ticker\s*\{[^}]*display:\s*grid/);
+  assert.match(css, /\.thought-ticker\[hidden\]\s*\{[^}]*display:\s*none/);
+  assert.match(css, /\.thought-summary\s*\{[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/);
 });
 
 test('uses spectator-first hierarchy while preserving match controls', async () => {
@@ -648,12 +682,12 @@ test('uses bounded transform motion while preserving board interaction states', 
 
   assert.match(app, /requestAnimationFrame/);
   assert.match(app, /setTimeout\(clearBoardAnimation, BOARD_SETTLE_MS\)/);
-  assert.match(app, /const BOARD_SETTLE_MS = 280/);
+  assert.match(app, /const BOARD_SETTLE_MS = 460/);
   assert.match(app, /replayPly === null && !pendingMove/);
   assert.match(app, /square\.classList\.toggle\('selected'/);
   assert.match(app, /square\.classList\.toggle\('submission-pending'/);
-  assert.match(css, /\.piece\.move-animation\s*\{[^}]*transform[^}]*260ms cubic-bezier\(\.22,\s*1,\s*\.36,\s*1\)/);
-  assert.match(css, /\.piece\.capture-animation\s*\{[^}]*opacity/);
+  assert.match(css, /\.piece\.move-animation\s*\{[^}]*transform[^}]*420ms cubic-bezier\(\.22,\s*1,\s*\.36,\s*1\)/);
+  assert.match(css, /\.piece\.capture-animation\s*\{[^}]*opacity[^}]*280ms/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.piece\.move-animation,\s*\.piece\.capture-animation\s*\{[^}]*transition:\s*none/);
 });
 

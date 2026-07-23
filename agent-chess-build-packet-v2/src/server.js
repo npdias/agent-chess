@@ -64,6 +64,12 @@ function safeSend(socket, message) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
 }
 
+export function normalizeTurnPaceMs(session, requestedMs) {
+  if (session?.mode !== 'exhibition' || session?.visibility !== 'public') return 0;
+  if (!Number.isInteger(requestedMs) || requestedMs < 0) return 0;
+  return Math.min(requestedMs, 5_000);
+}
+
 function publicSnapshot(record) {
   const turn = record.session.activeTurn();
   return {
@@ -107,6 +113,7 @@ export function createAgentChessServer({
   stockfishFactory = (options) => StockfishEngine.start(options),
   publicDir = PUBLIC_DIR,
   ticketNow = () => Date.now(),
+  waitForTurnTransition = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 } = {}) {
   const matches = new Map();
   const seatByToken = new Map();
@@ -147,6 +154,18 @@ export function createAgentChessServer({
       publicTrace: {
         requiredForPublicExhibition: binding.record.session.mode === 'exhibition' && binding.record.session.visibility === 'public',
         limit: 'Submit concise structured status only; never raw reasoning.',
+        phases: ['observe', 'probe', 'evaluate', 'choose', 'submit'],
+        statusExample: {
+          type: 'trace.publish', turnId: '<turnId>', source: 'agent_reported',
+          phase: 'probe', summary: 'Comparing forcing moves and king safety.',
+        },
+        decisionExample: {
+          type: 'move.submit', turnId: '<turnId>', moveUci: 'g1f3',
+          publicTrace: {
+            source: 'agent_reported', phase: 'choose', summary: 'Develops while protecting the king.',
+            candidates: [{ uci: 'g1f3', note: 'Development and king safety.' }], selectedMove: 'g1f3',
+          },
+        },
       },
     };
   }
@@ -228,6 +247,10 @@ export function createAgentChessServer({
     broadcast(record, { type: MESSAGE_TYPES.STATE, match: publicSnapshot(record) });
   }
 
+  async function pauseTurnTransition(record) {
+    if (record.turnPaceMs > 0) await waitForTurnTransition(record.turnPaceMs);
+  }
+
   function signalFailure(record, code, message) {
     const event = { type: MESSAGE_TYPES.ERROR, code, message, recoverable: false };
     for (const socket of record.agentSockets.values()) safeSend(socket, event);
@@ -305,7 +328,10 @@ export function createAgentChessServer({
     } finally {
       record.advancing = false;
     }
-    if (!record.engineFailed) await advance(record);
+    if (!record.engineFailed) {
+      await pauseTurnTransition(record);
+      await advance(record);
+    }
   }
 
   agentWss.on('connection', (socket, request, binding) => {
@@ -382,6 +408,7 @@ export function createAgentChessServer({
             safeSend(socket, accepted);
             broadcast(record, accepted);
             broadcastState(record);
+            await pauseTurnTransition(record);
             await advance(record);
             return;
           }
@@ -456,6 +483,7 @@ export function createAgentChessServer({
           ? Math.min(body.decisionDeadlineMs, 300_000) : null,
         decisionTimer: null,
         deadlineTurnId: null,
+        turnPaceMs: normalizeTurnPaceMs(session, body.turnPaceMs),
         evaluation: null,
         evaluationFen: null,
         evaluationPromise: null,
@@ -552,6 +580,7 @@ export function createAgentChessServer({
           record.deadlineTurnId = null;
           broadcastState(record);
           sendJson(response, 202, { accepted: true, moveUci: applied.uci, moveSan: applied.san });
+          await pauseTurnTransition(record);
           await advance(record);
         } else {
           const action = matchActionRoute[2];

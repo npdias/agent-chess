@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import WebSocket from 'ws';
-import { cacheAllMoves, cacheProbe, chooseDemoAction, createAgentRequest, exchangeAgentSession, runCommandAction, validateLocalCandidate } from '../src/connector.js';
+import { cacheAllMoves, cacheProbe, chooseDemoAction, createAgentRequest, exchangeAgentSession, publicStatusTraceForAction, runCommandAction, validateLocalCandidate } from '../src/connector.js';
 
 export function parseArgs(argv) {
   const args = {};
@@ -50,9 +50,11 @@ export async function run(args) {
     if (commandRounds >= 4) return fail('AGENT_COMMAND_ROUND_LIMIT');
     busy = true;
     try {
-      publish(activeTurn.turnId, { kind: 'status', phase: 'evaluate', summary: 'Evaluating local agent action.' });
+      if (commandRounds === 0) publish(activeTurn.turnId, { kind: 'status', phase: 'evaluate', summary: 'Evaluating local agent action.' });
       const action = args.command ? await runCommandAction(args.command, activeTurn) : chooseDemoAction(activeTurn);
       commandRounds += 1;
+      const publicStatus = publicStatusTraceForAction(action);
+      if (publicStatus) publish(activeTurn.turnId, publicStatus);
       if (action.probeSquare) {
         if (activeTurn.probeResults?.[action.probeSquare]) throw new Error('REPEATED_PROBE');
         socket.send(JSON.stringify(createAgentRequest(activeTurn, action)));
