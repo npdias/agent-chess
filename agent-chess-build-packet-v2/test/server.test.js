@@ -451,6 +451,98 @@ test('durable REST agent session claims an invitation then submits an idempotent
   }
 });
 
+test('REST match and turn expose Black-relative material after captures', async () => {
+  const server = createAgentChessServer();
+  const address = await server.start(0);
+  const claimBlackAgent = async (created) => {
+    const invite = await fetch(`${address.httpUrl}/api/agent-connections`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.black}` },
+    }).then((response) => response.json());
+    const claimed = await fetch(invite.connection.rest.claimUrl, { method: 'POST' });
+    assert.equal(claimed.status, 201);
+    const { sessionToken } = await claimed.json();
+    return { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' };
+  };
+  const waitForHumanTurn = async (created) => {
+    const until = Date.now() + 3_000;
+    while (Date.now() < until) {
+      const state = await getMatch(address, created.matchId);
+      if (state.activeTurn?.activeColor === 'white') return state.activeTurn;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error('human turn timeout');
+  };
+  const submitHuman = async (created, moveUci) => {
+    const turn = await waitForHumanTurn(created);
+    const response = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/human-moves`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${created.capabilities.white}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ turnId: turn.turnId, moveUci }),
+    });
+    assert.equal(response.status, 202);
+  };
+  const readAgentTurn = async (auth) => {
+    const joined = await fetch(`${address.httpUrl}/api/agent/match`, { headers: auth });
+    assert.equal(joined.status, 200);
+    const joinedTurn = (await joined.json()).turn;
+    const polled = await fetch(`${address.httpUrl}/api/agent/turn?waitMs=0`, { headers: auth });
+    assert.equal(polled.status, 200);
+    const polledTurn = (await polled.json()).turn;
+    assert.equal(polledTurn.turnId, joinedTurn.turnId);
+    return [joinedTurn, polledTurn];
+  };
+  const submitAgent = async (auth, turn, moveUci) => {
+    const decision = await fetch(`${address.httpUrl}/api/agent/decision`, {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({ turnId: turn.turnId, summary: `Select ${moveUci}.`, selectedMove: moveUci }),
+    });
+    assert.equal(decision.status, 202);
+    const moved = await fetch(`${address.httpUrl}/api/agent/move`, {
+      method: 'POST', headers: auth, body: JSON.stringify({ turnId: turn.turnId, moveUci }),
+    });
+    assert.equal(moved.status, 202);
+  };
+
+  try {
+    const down = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const downAuth = await claimBlackAgent(down);
+    await submitHuman(down, 'e2e4');
+    const [openingTurn] = await readAgentTurn(downAuth);
+    await submitAgent(downAuth, openingTurn, 'd7d5');
+    await submitHuman(down, 'e4d5');
+    for (const turn of await readAgentTurn(downAuth)) {
+      assert.equal(turn.material.balanceWhite, 1);
+      assert.equal(turn.material.capturedByWhite.pawns, 1);
+      assert.equal(turn.balanceForAgent, -1);
+      assert.equal(JSON.stringify(turn.material).includes('winning'), false);
+    }
+
+    const up = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
+    });
+    const upAuth = await claimBlackAgent(up);
+    await submitHuman(up, 'f2f4');
+    let [agentTurn] = await readAgentTurn(upAuth);
+    await submitAgent(upAuth, agentTurn, 'e7e5');
+    await submitHuman(up, 'g2g4');
+    [agentTurn] = await readAgentTurn(upAuth);
+    await submitAgent(upAuth, agentTurn, 'e5f4');
+    await submitHuman(up, 'h2h3');
+    for (const turn of await readAgentTurn(upAuth)) {
+      assert.equal(turn.material.balanceWhite, -1);
+      assert.equal(turn.material.capturedByBlack.pawns, 1);
+      assert.equal(turn.balanceForAgent, 1);
+      assert.equal(JSON.stringify(turn.material).includes('winning'), false);
+    }
+  } finally {
+    await server.stop();
+  }
+});
+
 test('REST same-move replay does not advance engine or replace current turn', async () => {
   let engine;
   class CountingStockfish extends FakeStockfish {
