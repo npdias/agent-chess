@@ -21,6 +21,14 @@ function waitForLine(engine, predicate, timeoutMs = 10_000) {
   });
 }
 
+export function parseUciScore(line, fen) {
+  const match = String(line).match(/\bscore\s+(cp|mate)\s+(-?\d+)/);
+  if (!match) return null;
+  const sideToMove = String(fen).trim().split(/\s+/)[1];
+  const value = Number(match[2]) * (sideToMove === 'b' ? -1 : 1);
+  return { type: match[1], value, perspective: 'white' };
+}
+
 export class StockfishEngine {
   constructor(engine, { movetimeMs = 100, skillLevel = 5 } = {}) {
     this.engine = engine;
@@ -59,6 +67,35 @@ export class StockfishEngine {
       const [, move] = line.split(/\s+/);
       if (!move || move === '(none)') throw new Error('STOCKFISH_NO_MOVE');
       return move;
+    };
+
+    const result = this.queue.then(operation, operation);
+    this.queue = result.catch(() => undefined);
+    return result;
+  }
+
+  async evaluate(fen, { movetimeMs = Math.min(100, this.movetimeMs) } = {}) {
+    const operation = async () => {
+      let latest = null;
+      const scoreListener = (line) => {
+        const score = parseUciScore(line, fen);
+        if (score) latest = score;
+      };
+      this.engine.__listeners.add(scoreListener);
+      try {
+        this.engine.sendCommand('setoption name Skill Level value 20');
+        this.engine.sendCommand(`position fen ${fen}`);
+        this.engine.sendCommand(`go movetime ${movetimeMs}`);
+        await waitForLine(
+          this.engine,
+          (candidate) => candidate.startsWith('bestmove '),
+          Math.max(10_000, movetimeMs * 20),
+        );
+      } finally {
+        this.engine.__listeners.delete(scoreListener);
+      }
+      if (!latest) throw new Error('STOCKFISH_NO_EVALUATION');
+      return latest;
     };
 
     const result = this.queue.then(operation, operation);

@@ -2,8 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildExhibitionPayload, materialPerspective, buildAgentInviteUrl, selectDecisionBrief, deriveBoardTransitions, buildMaterialDisplay } from '../public/app.js';
+import * as appModule from '../public/app.js';
 import { spawnSync } from 'node:child_process';
 import { fenToBoard, shellQuote, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
+
+const deriveTurnOwnerStatus = appModule.deriveTurnOwnerStatus ?? (() => ({}));
+const derivePlayerState = appModule.derivePlayerState ?? (() => '');
+const derivePostGameInterview = appModule.derivePostGameInterview ?? (() => ({}));
+const deriveBalanceOfPower = appModule.deriveBalanceOfPower ?? (() => ({}));
+const hasAgentJoined = appModule.hasAgentJoined ?? (() => false);
 
 test('maps FEN piece placement into 64 board squares', () => {
   const board = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
@@ -405,19 +412,144 @@ test('collapses connected onboarding to a slim status row', async () => {
     readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
     readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
   ]);
-  assert.match(app, /connector-how'\)\.hidden = Boolean\(match\.connected\)/);
-  assert.match(app, /connector-feedback'\)\.hidden = Boolean\(match\.connected\)/);
-  assert.match(css, /\.connector-card\.connected\s*\{[^}]*min-height:\s*0[^}]*padding:\s*8px 10px/);
+  assert.match(app, /const agentHasJoined = hasAgentJoined\(match\)/);
+  assert.match(app, /connector\.hidden = !ownsAgentSeat \|\| summary\.review/);
+  assert.match(app, /connector\.classList\.toggle\('connected', agentHasJoined\)/);
+  assert.match(app, /connector-how'\)\.hidden = agentHasJoined/);
+  assert.match(app, /connector-feedback'\)\.hidden = agentHasJoined/);
+  assert.match(css, /\.connector-card\.connected\s*\{[^}]*display:\s*flex[^}]*min-height:\s*0[^}]*padding:\s*8px 10px/);
 });
 
-test('uses Thinking Waiting and Finished player states without No clock', async () => {
+test('does not mistake an engine-first move for an agent connection', () => {
+  assert.equal(hasAgentJoined({ connected: false, game: { ply: 1 }, activity: [{ actor: 'engine', type: 'move.accepted' }] }), false);
+  assert.equal(hasAgentJoined({ connected: true, game: { ply: 0 }, activity: [] }), true);
+  assert.equal(hasAgentJoined({ connected: false, game: { ply: 2 }, activity: [{ actor: 'agent', type: 'agent.decision' }] }), true);
+});
+
+test('hides agent decision surface when no agent is playing', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(app, /const hasAgentSeat = Object\.values\(seats\)\.some\(\(seat\) => seat\.kind === 'agent'\)/);
+  assert.match(app, /decisionPanel\.hidden = summary\.review \|\| !hasAgentSeat/);
+});
+
+test('names exactly who owns the current turn', () => {
+  const seats = {
+    white: { kind: 'agent', name: 'Luna' },
+    black: { kind: 'engine', name: 'Computer' },
+  };
+
+  assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: false, seats, game: { turn: 'white' }, activity: [] }), {
+    headline: 'Waiting on Luna', detail: 'Agent needs to connect', state: 'waiting', activeColor: 'white',
+  });
+  assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: true, seats, game: { turn: 'white' }, activity: [{ phase: 'evaluate' }] }), {
+    headline: 'Luna is thinking', detail: 'Evaluate', state: 'thinking', activeColor: 'white',
+  });
+  assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: true, seats, game: { turn: 'black' }, activity: [] }), {
+    headline: 'Computer is moving', detail: 'Engine turn', state: 'moving', activeColor: 'black',
+  });
+  assert.equal(derivePlayerState({ status: 'active', connected: true, seats, game: { turn: 'white' } }, 'white'), 'Thinking');
+  assert.equal(derivePlayerState({ status: 'active', connected: true, seats, game: { turn: 'white' } }, 'black'), 'Watching');
+  assert.equal(derivePlayerState({ status: 'active', connected: false, seats, game: { turn: 'white' } }, 'white'), 'Connecting');
+  assert.equal(derivePlayerState({ status: 'completed', connected: false, seats, game: { turn: 'black', gameOver: true } }, 'white'), 'Finished');
+});
+
+test('uses explicit turn-owner states without ambiguous Waiting labels', async () => {
   const [html, app] = await Promise.all([
     readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
     readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
   ]);
-  assert.match(app, /summary\.review \? 'Finished' : match\.game\.turn === seat\.color \? 'Thinking' : 'Waiting'/);
+  assert.match(app, /derivePlayerState\(match, seat\.color, ownedControllerColor\)/);
+  assert.match(app, /deriveTurnOwnerStatus\(match, ownedControllerColor\)/);
+  assert.doesNotMatch(app, /\? 'Thinking' : 'Waiting'/);
   assert.doesNotMatch(app, /\? 'To move' : 'No clock'/);
   assert.doesNotMatch(html, /id="(?:top|bottom)-state" class="clock">No clock/);
+});
+
+test('builds a post-game interview from public summaries and recorded material swings', () => {
+  const interview = derivePostGameInterview({
+    status: 'completed',
+    termination: 'checkmate',
+    seats: { white: { kind: 'agent', name: 'Luna' }, black: { kind: 'engine', name: 'Computer' } },
+    activity: [
+      { type: 'agent.decision', actor: 'agent', source: 'agent_reported', summary: 'Claim the center.', selectedMove: 'd1d5' },
+      { type: 'agent.decision', actor: 'agent', source: 'agent_reported', summary: 'Keep king cover.', selectedMove: 'h2h3' },
+    ],
+    game: {
+      gameOver: true,
+      checkmate: true,
+      result: '0-1',
+      movesSan: ['Qxd5', 'exd5', 'Kh1', 'Qxg2#'],
+      positions: [
+        '4k3/8/4p3/3Q4/8/8/8/4K3 w - - 0 1',
+        '4k3/8/4p3/3Q4/8/8/8/4K3 b - - 0 1',
+        '4k3/8/8/3p4/8/8/8/4K3 w - - 0 2',
+        '4k3/8/8/3p4/8/8/7K/8 b - - 1 2',
+        '4k3/8/8/3p4/8/8/6qK/8 w - - 2 3',
+      ],
+    },
+  });
+
+  assert.equal(interview.agentName, 'Luna');
+  assert.equal(interview.sourceLabel, 'Public record');
+  assert.match(interview.opening, /Claim the center/);
+  assert.match(interview.turningPoint, /1\.Qxd5/);
+  assert.match(interview.turningPoint, /1\.\.\.exd5/);
+  assert.match(interview.turningPoint, /9-point/);
+  assert.match(interview.pressure, /2\.\.\.Qxg2#/);
+  assert.match(interview.rematch, /recaptures/);
+  assert.match(interview.note, /No private reasoning/);
+});
+
+test('shows interview in terminal rail without adding another visible live-match surface', async () => {
+  const [html, app, css] = await Promise.all([
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  const postMatch = html.match(/<section id="post-match"[\s\S]*?<\/section>/)?.[0] ?? '';
+  assert.match(postMatch, /id="interview-list"/);
+  assert.match(postMatch, /id="interview-title"/);
+  assert.ok(postMatch.indexOf('id="interview-list"') < postMatch.indexOf('id="review-list"'));
+  assert.match(app, /decisionPanel\.hidden = summary\.review/);
+  assert.match(app, /derivePostGameInterview\(match\)/);
+  assert.match(css, /\.match-complete \.post-match\s*\{[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.match-complete \.moves-panel\s*\{[^}]*flex:\s*0 0 150px/);
+});
+
+test('derives chess-site-style balance from Stockfish evaluation with truthful fallbacks', () => {
+  const whiteLead = deriveBalanceOfPower({ evaluation: { type: 'cp', value: 120, perspective: 'white' }, game: {} });
+  assert.equal(whiteLead.label, '+1.2');
+  assert.equal(whiteLead.leader, 'White');
+  assert.ok(whiteLead.whitePercent > 50);
+  assert.equal(whiteLead.source, 'Stockfish');
+
+  assert.deepEqual(deriveBalanceOfPower({ evaluation: { type: 'mate', value: -3, perspective: 'white' }, game: {} }), {
+    whitePercent: 0, label: 'M3', leader: 'Black', source: 'Stockfish', accessible: 'Stockfish evaluation: Black has mate in 3',
+  });
+  assert.deepEqual(deriveBalanceOfPower({ game: { gameOver: true, checkmate: true, result: '0-1' } }), {
+    whitePercent: 0, label: '0-1', leader: 'Black', source: 'Result', accessible: 'Final result: Black won',
+  });
+
+  const material = deriveBalanceOfPower({ game: {
+    initialFen: '3qk3/8/8/8/8/8/8/3QK3 w - - 0 1',
+    fen: '3qk3/8/8/8/8/8/8/3QK3 w - - 0 1',
+  } });
+  assert.equal(material.source, 'Material');
+  assert.equal(material.whitePercent, 50);
+});
+
+test('places an accessible vertical power bar beside the fixed board', async () => {
+  const [html, app, css] = await Promise.all([
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  assert.match(html, /class="board-shell"[\s\S]*?id="power-bar"[\s\S]*?id="board"/);
+  assert.match(html, /id="power-score"/);
+  assert.match(app, /deriveBalanceOfPower\(match\)/);
+  assert.match(app, /powerBar\.style\.setProperty\('--white-share'/);
+  assert.match(css, /\.power-bar\s*\{[^}]*position:\s*absolute[^}]*left:\s*-18px[^}]*height:\s*100%/);
+  assert.match(css, /\.power-white\s*\{[^}]*height:\s*var\(--white-share\)/);
 });
 
 test('keeps captured-piece detail accessible while showing compact material score', () => {
@@ -476,11 +608,12 @@ test('uses bounded transform motion while preserving board interaction states', 
   ]);
 
   assert.match(app, /requestAnimationFrame/);
-  assert.match(app, /setTimeout\(clearBoardAnimation, 220\)/);
+  assert.match(app, /setTimeout\(clearBoardAnimation, BOARD_SETTLE_MS\)/);
+  assert.match(app, /const BOARD_SETTLE_MS = 280/);
   assert.match(app, /replayPly === null && !pendingMove/);
   assert.match(app, /square\.classList\.toggle\('selected'/);
   assert.match(app, /square\.classList\.toggle\('submission-pending'/);
-  assert.match(css, /\.piece\.move-animation\s*\{[^}]*transform/);
+  assert.match(css, /\.piece\.move-animation\s*\{[^}]*transform[^}]*260ms cubic-bezier\(\.22,\s*1,\s*\.36,\s*1\)/);
   assert.match(css, /\.piece\.capture-animation\s*\{[^}]*opacity/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.piece\.move-animation,\s*\.piece\.capture-animation\s*\{[^}]*transition:\s*none/);
 });

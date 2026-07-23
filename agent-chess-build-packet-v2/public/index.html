@@ -57,7 +57,13 @@
           <div class="player-meta"><span class="rating-label" id="top-kind">Player</span><span class="clock" id="top-state">Waiting</span></div>
         </div>
 
-        <div id="board" class="board" aria-label="Current chess position"></div>
+        <div class="board-shell">
+          <div id="power-bar" class="power-bar" role="img" aria-label="Position balance: even" style="--white-share: 50%">
+            <div class="power-white" aria-hidden="true"></div>
+            <output id="power-score" class="power-score">0.0</output>
+          </div>
+          <div id="board" class="board" aria-label="Current chess position"></div>
+        </div>
 
         <div class="player-strip agent">
           <div class="player-identity"><span id="bottom-avatar" class="avatar">—</span><div><strong id="bottom-name">White</strong><small id="bottom-color">White</small></div></div>
@@ -90,10 +96,12 @@
         </section>
 
         <section id="post-match" class="panel post-match" hidden>
-          <div class="panel-title"><h2>Match breakdown</h2><span>First-pass review</span></div>
+          <div class="panel-title"><h2>Post-game</h2><span>Public record</span></div>
           <div class="review-callout"><strong id="review-headline">Game complete</strong><p id="review-copy"></p></div>
+          <div class="interview-heading"><h3 id="interview-title">Post-game interview</h3><span id="interview-source">Public record</span></div>
+          <dl id="interview-list" class="interview-list"></dl>
           <div class="review-list" id="review-list"></div>
-          <p class="analysis-note">Engine evaluation, inaccuracies, and Elo impact require the planned PGN analysis worker.</p>
+          <p id="interview-note" class="analysis-note"></p>
         </section>
       </aside>
     </section>

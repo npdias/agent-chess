@@ -82,6 +82,7 @@ function publicSnapshot(record) {
       mode: turn.mode,
     },
     connected: [...record.agentSockets.values()].some((socket) => socket?.readyState === WebSocket.OPEN),
+    ...(record.evaluation ? { evaluation: record.evaluation } : {}),
     ...(record.hasEngine ? { engine: {
       name: 'Stockfish 18 Lite',
       package: `stockfish@${packageJson.dependencies.stockfish}`,
@@ -233,6 +234,28 @@ export function createAgentChessServer({
     broadcast(record, event);
   }
 
+  async function refreshEvaluation(record) {
+    if (!record.engine?.evaluate || record.session.isTerminal()) return;
+    const fen = record.session.game.snapshot().fen;
+    if (record.evaluationFen === fen) return;
+    if (record.evaluationPromise) {
+      await record.evaluationPromise;
+      if (record.evaluationFen === fen) return;
+    }
+    const request = record.engine.evaluate(fen, { movetimeMs: Math.max(50, Math.min(100, record.movetimeMs)) })
+      .then((evaluation) => {
+        if (record.session.game.snapshot().fen !== fen) return;
+        record.evaluation = evaluation;
+        record.evaluationFen = fen;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (record.evaluationPromise === request) record.evaluationPromise = null;
+      });
+    record.evaluationPromise = request;
+    await request;
+  }
+
   async function advance(record) {
     if (record.advancing || record.engineFailed) return;
     if (record.session.isTerminal()) return emitTerminal(record);
@@ -240,6 +263,7 @@ export function createAgentChessServer({
     if (state.gameOver) {
       return emitTerminal(record);
     }
+    await refreshEvaluation(record);
     const seat = record.session.activeSeat();
     if (seat.kind === 'human') {
       record.session.createTurnPayload();
@@ -432,6 +456,9 @@ export function createAgentChessServer({
           ? Math.min(body.decisionDeadlineMs, 300_000) : null,
         decisionTimer: null,
         deadlineTurnId: null,
+        evaluation: null,
+        evaluationFen: null,
+        evaluationPromise: null,
       };
       matches.set(session.id, record);
       const capabilities = {};
@@ -503,6 +530,7 @@ export function createAgentChessServer({
       sendJson(response, 200, {
         ...record.session.exportRecord(),
         ...(record.hasEngine ? { engine: publicSnapshot(record).engine } : {}),
+        ...(record.evaluation ? { evaluation: record.evaluation } : {}),
         protocolVersion: '2.0',
       });
       return true;

@@ -9,6 +9,9 @@ import { runSmoke } from '../bin/smoke-human.js';
 import { formatActivity, shellQuote } from '../public/app.js';
 
 class FakeStockfish {
+  async evaluate() {
+    return { type: 'cp', value: 42, perspective: 'white' };
+  }
   async bestMove(fen) {
     const chess = new Chess(fen);
     return chess.moves({ verbose: true })[0].lan;
@@ -79,6 +82,33 @@ async function waitForPly(address, matchId, ply, timeoutMs = 3000) {
   }
   throw new Error(`ply ${ply} timeout`);
 }
+
+async function waitForEvaluation(address, matchId, timeoutMs = 3000) {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    const state = await getMatch(address, matchId);
+    if (state.evaluation) return state;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('evaluation timeout');
+}
+
+test('publishes Stockfish evaluation without exposing engine internals', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'agent', name: 'Luna' }, black: { kind: 'engine', name: 'Computer' } },
+    });
+    const state = await waitForEvaluation(address, created.matchId);
+    assert.deepEqual(state.evaluation, { type: 'cp', value: 42, perspective: 'white' });
+    const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`).then((response) => response.json());
+    assert.deepEqual(exported.evaluation, state.evaluation);
+  } finally {
+    await server.stop();
+  }
+});
 
 async function runReferenceConnectorFailure(address, created, command) {
   const observer = new WebSocket(`${address.wsUrl}/events?matchId=${created.matchId}`);

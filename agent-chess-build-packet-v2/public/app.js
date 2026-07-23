@@ -55,6 +55,9 @@ const DISCLOSURE_LABELS = {
   adapter_generated: 'Adapter generated',
 };
 
+const BOARD_SETTLE_MS = 280;
+const CAPTURE_FADE_MS = 180;
+
 export function deriveTurnPhase(match = {}) {
   if (match.game?.gameOver || ['completed', 'aborted', 'failed'].includes(match.status)) return { key: 'complete', label: 'Match complete' };
   const entries = activeTurnActivity(match);
@@ -190,6 +193,107 @@ export function deriveMatchSummary(match) {
   return deriveExhibitionSummary(match);
 }
 
+function terminalMatch(match = {}) {
+  return Boolean(match.game?.gameOver || ['completed', 'aborted', 'failed'].includes(match.status));
+}
+
+export function deriveTurnOwnerStatus(match = {}, ownedColor = null) {
+  if (terminalMatch(match)) {
+    return { headline: deriveMatchSummary(match).status, detail: 'Match complete', state: 'complete', activeColor: null };
+  }
+  const activeColor = match.game?.turn ?? null;
+  const seat = match.seats?.[activeColor] ?? {};
+  const name = seat.name ?? (activeColor ? `${activeColor[0].toUpperCase()}${activeColor.slice(1)}` : 'Player');
+  if (seat.kind === 'agent') {
+    return match.connected
+      ? { headline: `${name} is thinking`, detail: deriveTurnPhase(match).label, state: 'thinking', activeColor }
+      : { headline: `Waiting on ${name}`, detail: 'Agent needs to connect', state: 'waiting', activeColor };
+  }
+  if (seat.kind === 'engine') return { headline: `${name} is moving`, detail: 'Engine turn', state: 'moving', activeColor };
+  if (seat.kind === 'human' && activeColor === ownedColor) return { headline: 'Your move', detail: `${name} controls ${activeColor}`, state: 'your-turn', activeColor };
+  return { headline: `Waiting on ${name}`, detail: 'Player turn', state: 'waiting', activeColor };
+}
+
+export function derivePlayerState(match = {}, color, ownedColor = null) {
+  if (terminalMatch(match)) return 'Finished';
+  if (match.game?.turn !== color) return 'Watching';
+  const seat = match.seats?.[color] ?? {};
+  if (seat.kind === 'agent') return match.connected ? 'Thinking' : 'Connecting';
+  if (seat.kind === 'engine') return 'Moving';
+  if (seat.kind === 'human') return color === ownedColor ? 'Your move' : 'To move';
+  return 'To move';
+}
+
+function moveLabel(index, san) {
+  const number = Math.floor(index / 2) + 1;
+  return index % 2 === 0 ? `${number}.${san}` : `${number}...${san}`;
+}
+
+function moveColor(index) {
+  return index % 2 === 0 ? 'white' : 'black';
+}
+
+export function derivePostGameInterview(match = {}) {
+  const seats = match.seats ?? {};
+  const agentEntry = Object.entries(seats).find(([, seat]) => seat.kind === 'agent')
+    ?? Object.entries(seats).find(([, seat]) => seat.kind !== 'engine')
+    ?? ['white', seats.white ?? {}];
+  const [agentColor, agentSeat] = agentEntry;
+  const opponentColor = agentColor === 'white' ? 'black' : 'white';
+  const agentName = agentSeat.name ?? 'Agent';
+  const opponentName = seats[opponentColor]?.name ?? 'Opponent';
+  const moves = match.game?.movesSan ?? [];
+  const positions = match.game?.positions ?? [];
+  const summaries = [...new Set((match.activity ?? [])
+    .filter((entry) => entry?.type === 'agent.decision' && entry?.actor === 'agent' && DISCLOSURE_LABELS[entry?.source])
+    .map((entry) => entry.summary?.trim())
+    .filter(Boolean))].slice(0, 2);
+  const earlyAgentMoves = moves
+    .map((san, index) => ({ san, index }))
+    .filter(({ index }) => moveColor(index) === agentColor)
+    .slice(0, 3)
+    .map(({ san, index }) => moveLabel(index, san));
+  const opening = summaries.length
+    ? `Early published summaries: ${summaries.map((summary) => `“${summary}”`).join(' ')}`
+    : `Opening moves: ${earlyAgentMoves.join(', ') || 'No completed agent moves.'}`;
+
+  let largestDrop = { points: 0, index: -1 };
+  const initialFen = positions[0];
+  if (initialFen) {
+    for (let index = 1; index < positions.length; index += 1) {
+      const before = materialSummary(initialFen, positions[index - 1], agentColor).difference;
+      const after = materialSummary(initialFen, positions[index], agentColor).difference;
+      const points = before - after;
+      if (points > largestDrop.points) largestDrop = { points, index: index - 1 };
+    }
+  }
+  const lossMoveIndex = largestDrop.index;
+  const precedingAgentIndex = lossMoveIndex >= 0 && moveColor(lossMoveIndex) !== agentColor ? lossMoveIndex - 1 : lossMoveIndex;
+  const criticalIndex = precedingAgentIndex >= 0 ? precedingAgentIndex : Math.max(0, moves.length - 1);
+  const criticalMove = moves[criticalIndex] ? moveLabel(criticalIndex, moves[criticalIndex]) : 'critical move';
+  const reply = moves[lossMoveIndex] ? moveLabel(lossMoveIndex, moves[lossMoveIndex]) : '';
+  const turningPoint = largestDrop.points > 0
+    ? `${criticalMove} preceded the largest recorded material swing, a ${largestDrop.points}-point loss${reply ? ` after ${reply}` : ''}.`
+    : 'Public move record shows no single material swing large enough to name a turning point.';
+  const finalIndex = moves.length - 1;
+  const finalMove = finalIndex >= 0 ? moveLabel(finalIndex, moves[finalIndex]) : '';
+  const pressure = match.game?.checkmate && finalMove
+    ? `${opponentName} converted the final attack with ${finalMove}.`
+    : `${opponentName} completed the recorded result ${match.game?.result ?? '*'}.`;
+  const rematch = largestDrop.points > 0
+    ? `Before ${criticalMove}, recheck forcing captures and recaptures.`
+    : 'Keep published plans concise, then recheck forcing moves before submission.';
+  return {
+    agentName,
+    sourceLabel: 'Public record',
+    opening,
+    turningPoint,
+    pressure,
+    rematch,
+    note: 'Generated from public PGN and published summaries. No private reasoning or engine evaluation.',
+  };
+}
+
 export function buildExhibitionPayload({ matchup, color, skillLevel }) {
   const agent = matchup === 'agent-engine';
   return {
@@ -211,6 +315,67 @@ export function buildMaterialDisplay(material) {
     text: `Material ${score}`,
     accessible: `Captured: ${material.captured.join(', ') || 'none'}; Material ${score}`,
   };
+}
+
+function clamp(value, minimum, maximum) {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+export function deriveBalanceOfPower(match = {}) {
+  const game = match.game ?? {};
+  if (game.gameOver && game.checkmate && ['1-0', '0-1'].includes(game.result)) {
+    const whiteWon = game.result === '1-0';
+    return {
+      whitePercent: whiteWon ? 100 : 0,
+      label: game.result,
+      leader: whiteWon ? 'White' : 'Black',
+      source: 'Result',
+      accessible: `Final result: ${whiteWon ? 'White' : 'Black'} won`,
+    };
+  }
+  const evaluation = match.evaluation;
+  if (evaluation?.perspective === 'white' && evaluation.type === 'mate' && Number.isInteger(evaluation.value)) {
+    const whiteLeads = evaluation.value > 0;
+    return {
+      whitePercent: whiteLeads ? 100 : 0,
+      label: `M${Math.abs(evaluation.value)}`,
+      leader: whiteLeads ? 'White' : 'Black',
+      source: 'Stockfish',
+      accessible: `Stockfish evaluation: ${whiteLeads ? 'White' : 'Black'} has mate in ${Math.abs(evaluation.value)}`,
+    };
+  }
+  if (evaluation?.perspective === 'white' && evaluation.type === 'cp' && Number.isInteger(evaluation.value)) {
+    const whitePercent = clamp(50 + 45 * Math.tanh(evaluation.value / 350), 5, 95);
+    const score = evaluation.value / 100;
+    const label = `${score >= 0 ? '+' : ''}${score.toFixed(1)}`;
+    const leader = score > 0.05 ? 'White' : score < -0.05 ? 'Black' : 'Even';
+    return {
+      whitePercent,
+      label,
+      leader,
+      source: 'Stockfish',
+      accessible: leader === 'Even' ? `Stockfish evaluation: even, ${label}` : `Stockfish evaluation: ${leader} leads, ${label}`,
+    };
+  }
+  const initialFen = game.initialFen ?? game.positions?.[0] ?? game.fen;
+  const material = materialSummary(initialFen, game.fen ?? initialFen, 'white');
+  const whitePercent = clamp(50 + material.difference * 3, 10, 90);
+  const leader = material.difference > 0 ? 'White' : material.difference < 0 ? 'Black' : 'Even';
+  const label = `M ${material.difference >= 0 ? '+' : ''}${material.difference}`;
+  return {
+    whitePercent,
+    label,
+    leader,
+    source: 'Material',
+    accessible: leader === 'Even' ? 'Material balance: even' : `Material balance: ${leader} leads by ${Math.abs(material.difference)}`,
+  };
+}
+
+export function hasAgentJoined(match = {}) {
+  return Boolean(
+    match.connected
+    || (match.activity ?? []).some((entry) => entry.type === 'agent.decision' || entry.actor === 'agent')
+  );
 }
 
 export function buildReviewItem(doc, label, value) {
@@ -334,7 +499,7 @@ function reconcileBoardPieces(board, pieces, animation) {
       const captured = capturedSquare.querySelector('.piece');
       if (captured) {
         captured.classList.add('capture-animation');
-        setTimeout(() => captured.remove(), 190);
+        setTimeout(() => captured.remove(), CAPTURE_FADE_MS);
       }
     }
     for (const transfer of animation.transfers) {
@@ -348,7 +513,7 @@ function reconcileBoardPieces(board, pieces, animation) {
       toSquare.append(moving);
       const fromRect = fromSquare.getBoundingClientRect();
       const toRect = toSquare.getBoundingClientRect();
-      moving.style.transform = `translate(${fromRect.left - toRect.left}px, ${fromRect.top - toRect.top}px)`;
+      moving.style.transform = `translate3d(${fromRect.left - toRect.left}px, ${fromRect.top - toRect.top}px, 0)`;
       moving.classList.add('move-animation');
       requestAnimationFrame(() => requestAnimationFrame(() => { moving.style.transform = ''; }));
     }
@@ -408,7 +573,7 @@ function renderBoard(match) {
   if (replayPly === null) previousLiveFen = match.game.fen;
   if (animation) {
     boardAnimationActive = true;
-    boardAnimationTimer = setTimeout(clearBoardAnimation, 220);
+    boardAnimationTimer = setTimeout(clearBoardAnimation, BOARD_SETTLE_MS);
   }
 }
 
@@ -470,8 +635,11 @@ function renderDecisionBrief(match) {
 }
 
 function renderStatusLine(match) {
-  const current = deriveTurnPhase(match);
-  qs('phase-current').textContent = current.label;
+  const owner = deriveTurnOwnerStatus(match, ownedControllerColor);
+  qs('status-kicker').textContent = owner.state === 'complete' ? 'Match status' : 'Current turn';
+  qs('status-title').textContent = owner.headline;
+  qs('phase-current').textContent = owner.detail;
+  qs('status-line').dataset.state = owner.state;
 }
 
 function renderReview(match, summary) {
@@ -487,6 +655,24 @@ function renderReview(match, summary) {
     ['Trace events', String(match.trace.length)],
   ];
   qs('review-list').replaceChildren(...items.map(([label, value]) => buildReviewItem(document, label, value)));
+  const interview = derivePostGameInterview(match);
+  qs('interview-title').textContent = `${interview.agentName} post-game`;
+  qs('interview-source').textContent = interview.sourceLabel;
+  const answers = [
+    ['Opening plan', interview.opening],
+    ['Turning point', interview.turningPoint],
+    ['Biggest pressure', interview.pressure],
+    ['Rematch change', interview.rematch],
+  ];
+  const list = qs('interview-list');
+  list.replaceChildren(...answers.map(([question, answer]) => {
+    const row = document.createElement('div');
+    const term = document.createElement('dt'); term.textContent = question;
+    const detail = document.createElement('dd'); detail.textContent = answer;
+    row.append(term, detail);
+    return row;
+  }));
+  qs('interview-note').textContent = interview.note;
 }
 
 function renderPlayerStrips(match, summary = deriveMatchSummary(match)) {
@@ -496,14 +682,27 @@ function renderPlayerStrips(match, summary = deriveMatchSummary(match)) {
     qs(`${position}-kind`).textContent = seat.kindLabel;
     qs(`${position}-avatar`).className = `avatar avatar-${seat.kind}`;
     qs(`${position}-avatar`).textContent = (seat.name ?? seat.kindLabel).slice(0, 2).toUpperCase();
-    qs(`${position}-state`).textContent = summary.review ? 'Finished' : match.game.turn === seat.color ? 'Thinking' : 'Waiting';
+    qs(`${position}-state`).textContent = derivePlayerState(match, seat.color, ownedControllerColor);
   }
+}
+
+function renderPowerBar(match) {
+  const balance = deriveBalanceOfPower(match);
+  const powerBar = qs('power-bar');
+  powerBar.style.setProperty('--white-share', `${balance.whitePercent}%`);
+  powerBar.classList.toggle('flipped', boardFlipped);
+  powerBar.dataset.leader = balance.leader.toLowerCase();
+  powerBar.setAttribute('aria-label', balance.accessible);
+  const score = qs('power-score');
+  score.textContent = balance.label;
+  score.title = balance.source;
 }
 
 function render(match) {
   currentMatch = match;
   const summary = deriveMatchSummary(match);
   document.documentElement.classList.add('match-active');
+  document.documentElement.classList.toggle('match-complete', summary.review);
   qs('empty-state').hidden = true;
   qs('match-view').hidden = false;
   const seats = match.seats ?? {};
@@ -520,25 +719,31 @@ function render(match) {
   materialNode.textContent = display.text;
   materialNode.setAttribute('aria-label', display.accessible);
   materialNode.title = display.accessible;
+  renderPowerBar(match);
   qs('steering-form').hidden = true;
   qs('steering-locked').hidden = false;
   qs('steering-state').textContent = 'Locked';
-  qs('status-title').textContent = summary.status;
   renderStatusLine(match);
   renderBoard(match);
   renderMoves(match);
   renderTrace(match);
-  renderDecisionBrief(match);
+  const hasAgentSeat = Object.values(seats).some((seat) => seat.kind === 'agent');
+  const decisionPanel = qs('decision-brief');
+  decisionPanel.hidden = summary.review || !hasAgentSeat;
+  if (!decisionPanel.hidden) renderDecisionBrief(match);
   renderReview(match, summary);
   const ownsAgentSeat = Object.entries(seats).some(([color, seat]) => seat.kind === 'agent' && sessionStorage.getItem(`${match.id}:capability:${color}`));
+  const agentHasJoined = hasAgentJoined(match);
+  const needsReconnect = agentHasJoined && !match.connected && !summary.review;
   const connector = qs('connector');
-  connector.hidden = !ownsAgentSeat;
-  connector.classList.toggle('connected', Boolean(match.connected));
-  qs('connector-title').textContent = match.connected ? 'Agent connected' : 'Connect local agent';
-  qs('copy-agent-link').hidden = Boolean(match.connected);
-  qs('copy-command').hidden = Boolean(match.connected);
-  qs('connector-how').hidden = Boolean(match.connected);
-  qs('connector-feedback').hidden = Boolean(match.connected);
+  connector.hidden = !ownsAgentSeat || summary.review;
+  connector.classList.toggle('connected', agentHasJoined);
+  qs('connector-title').textContent = match.connected ? 'Agent connected' : needsReconnect ? 'Agent disconnected' : 'Connect local agent';
+  qs('copy-agent-link').hidden = Boolean(match.connected) || summary.review;
+  qs('copy-agent-link').textContent = needsReconnect ? 'Reconnect agent' : 'Copy agent link';
+  qs('copy-command').hidden = agentHasJoined || summary.review;
+  qs('connector-how').hidden = agentHasJoined;
+  qs('connector-feedback').hidden = agentHasJoined;
   qs('connect-command').hidden = true;
   qs('connector-feedback').textContent = 'One-use link keeps credentials, prompts, and private reasoning local.';
   qs('lifecycle-action').hidden = summary.review || !humanCapability;
@@ -654,7 +859,7 @@ function boot() {
     qs('agent-help').open = true;
     qs('match-tools-dialog').showModal();
   });
-  qs('flip-board').addEventListener('click', () => { boardFlipped = !boardFlipped; if (currentMatch) { renderBoard(currentMatch); renderPlayerStrips(currentMatch); } });
+  qs('flip-board').addEventListener('click', () => { boardFlipped = !boardFlipped; if (currentMatch) { renderBoard(currentMatch); renderPlayerStrips(currentMatch); renderPowerBar(currentMatch); } });
   async function mintAgentSession() {
     const agentColor = currentMatch && Object.entries(currentMatch.seats).find(([, seat]) => seat.kind === 'agent')?.[0];
     const agentCapability = agentColor && sessionStorage.getItem(`${currentMatch.id}:capability:${agentColor}`);
