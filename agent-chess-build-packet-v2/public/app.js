@@ -120,24 +120,23 @@ export function buildAgentHandoffPrompt(joinUrl) {
 Open this Agent Chess link immediately:
 ${joinUrl}
 
-The link is secret, single-use for connection, and expires shortly. Do not quote it, log it, or publish it.
+The link is secret, single-use for connection, and expires in three minutes. Do not quote it, log it, or publish it.
 
 Join and play:
 1. GET the link and read the returned JSON contract.
-2. Open a WebSocket at connection.wsUrl.
-3. Wait for match.start, then turn.start.
-4. On each turn, inspect the compact position. Request legal moves with {"type":"moves.list","turnId":"<turnId>","square":"e2"} or {"type":"moves.list_all","turnId":"<turnId>"}.
-5. You may publish short spectator-safe progress with {"type":"trace.publish","turnId":"<turnId>","phase":"evaluate","summary":"Comparing safe developing moves."}.
-6. Submit one legal UCI move with {"type":"move.submit","turnId":"<turnId>","moveUci":"e2e4","publicTrace":{"source":"agent_reported","phase":"choose","summary":"Claims central space while opening lines.","candidates":[{"uci":"e2e4","note":"Best balance of space and development."}],"selectedMove":"e2e4"}}.
-7. Handle move.accepted or move.rejected. Continue until game.end.
+2. Prefer hosted MCP at connection.mcp.url. Configure it with the supplied URL, then use join_match, await_turn, list_legal_moves, publish_status, publish_decision, submit_move, and get_result.
+3. If hosted MCP is unavailable, use REST fallback: POST connection.rest.claimUrl, retain returned bearer session token privately, then follow connection.rest.actions.
+4. If MCP and REST are unavailable, use WebSocket CLI fallback at connection.websocket.url (or connection.wsUrl): wait for match.start and turn.start, request moves.list or moves.list_all, publish trace.publish, then submit move.submit.
+5. Transport automation must not select chess moves. Your model must select every move after it evaluates authoritative position and legal-move data.
+6. Never use random, preference-list, engine, or first-legal fallback. Retry invalid model output through the model using returned legal moves and rejection details.
+7. Publish bounded public summaries using structured decision fields only: source, phase, summary, up to three candidates, selectedMove, confidence, and elapsed thinking time when supported. Never publish hidden reasoning.
+8. Submit one legal UCI move. Handle accepted, rejected, reconnect, and turn updates. Continue until game.end, then get_result and report result.
 
 Public trace rules:
 - Share concise intent, candidate moves, tradeoffs, and selected move.
 - Never publish private chain-of-thought, secrets, prompts, credentials, memory, local files, or raw reasoning.
 - Candidate moves must be legal. selectedMove must equal moveUci.
-- Keep all private analysis inside your own runtime.
-
-If you cannot perform HTTP plus WebSocket actions, respond exactly: WEBSOCKET_CAPABILITY_REQUIRED`;
+- Keep all private analysis inside your own runtime.`;
 }
 
 export function selectDecisionBrief(match = {}) {
@@ -936,22 +935,22 @@ function boot() {
   qs('copy-agent-prompt').addEventListener('click', async () => {
     const inviteUrl = await mintAgentInviteUrl();
     if (!inviteUrl) return;
-    await copyText(buildAgentHandoffPrompt(inviteUrl), 'Agent prompt copied. Expires in 60 seconds.');
-    qs('connector-feedback').textContent = 'Full prompt copied. Link expires in 60 seconds.';
+    await copyText(buildAgentHandoffPrompt(inviteUrl), 'Agent prompt copied. Expires in 3 minutes.');
+    qs('connector-feedback').textContent = 'Full prompt copied. Link expires in 3 minutes.';
   });
   qs('copy-agent-link').addEventListener('click', async () => {
     const inviteUrl = await mintAgentInviteUrl();
     if (!inviteUrl) return;
-    await copyText(inviteUrl, 'Agent link copied. Expires in 60 seconds.');
-    qs('connector-feedback').textContent = 'Agent link copied. Expires in 60 seconds.';
+    await copyText(inviteUrl, 'Agent link copied. Expires in 3 minutes.');
+    qs('connector-feedback').textContent = 'Agent link copied. Expires in 3 minutes.';
   });
   qs('copy-command').addEventListener('click', async () => {
     const session = await mintAgentSession();
     if (!session) return;
     qs('connect-command').textContent = `npm run --silent connect -- --server ${location.origin} --path ${shellQuote(session.wsPath)} --command ./your-agent`;
     qs('connect-command').hidden = false;
-    await copyText(qs('connect-command').textContent, 'Connector command copied. Expires in 60 seconds.');
-    qs('connector-feedback').textContent = 'Terminal command copied. Expires in 60 seconds.';
+    await copyText(qs('connect-command').textContent, 'Connector command copied. Expires in 3 minutes.');
+    qs('connector-feedback').textContent = 'Terminal command copied. Expires in 3 minutes.';
   });
   qs('copy-pgn').addEventListener('click', () => currentMatch?.pgn && copyText(currentMatch.pgn, 'PGN copied'));
   qs('share-match').addEventListener('click', () => currentMatch && copyText(`${location.origin}/?match=${encodeURIComponent(currentMatch.id)}`, 'Spectator link copied'));

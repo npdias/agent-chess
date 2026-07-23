@@ -93,6 +93,23 @@ async function waitForEvaluation(address, matchId, timeoutMs = 3000) {
   throw new Error('evaluation timeout');
 }
 
+test('serves machine discovery map from /llms.txt', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const response = await fetch(`${address.httpUrl}/llms.txt`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type') ?? '', /^text\/plain/);
+    const discovery = await response.text();
+    assert.match(discovery, /docs\/reference\/AGENT_API\.md/);
+    assert.match(discovery, /hosted MCP/i);
+    assert.match(discovery, /REST/i);
+    assert.match(discovery, /WebSocket CLI/i);
+  } finally {
+    await server.stop();
+  }
+});
+
 test('publishes Stockfish evaluation without exposing engine internals', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);

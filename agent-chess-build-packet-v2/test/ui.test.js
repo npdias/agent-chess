@@ -363,6 +363,15 @@ test('builds a self-contained agent handoff prompt around the fresh join link', 
   assert.equal(prompt.split(joinUrl).length - 1, 1);
   for (const expected of [
     'Open this Agent Chess link immediately',
+    'hosted MCP',
+    'REST fallback',
+    'WebSocket CLI fallback',
+    'Transport automation must not select chess moves',
+    'model must select every move',
+    'Never use random, preference-list, engine, or first-legal fallback',
+    'Retry invalid model output through the model',
+    'structured decision fields only',
+    'bounded public summaries',
     'connection.wsUrl',
     'match.start',
     'turn.start',
@@ -371,9 +380,17 @@ test('builds a self-contained agent handoff prompt around the fresh join link', 
     'trace.publish',
     'move.submit',
     'game.end',
-    'WEBSOCKET_CAPABILITY_REQUIRED',
     'Never publish private chain-of-thought',
   ]) assert.match(prompt, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('keeps invitation copy feedback aligned to the three-minute claim window', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(app, /Agent prompt copied\. Expires in 3 minutes\./);
+  assert.match(app, /Full prompt copied\. Link expires in 3 minutes\./);
+  assert.match(app, /Agent link copied\. Expires in 3 minutes\./);
+  assert.match(app, /Terminal command copied\. Expires in 3 minutes\./);
+  assert.doesNotMatch(app, /Expires in 60 seconds/);
 });
 
 test('uses spectator-first hierarchy while preserving match controls', async () => {

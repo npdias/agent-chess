@@ -18,7 +18,7 @@ Three pinned production dependencies install: `chess.js@1.4.0`, `stockfish@18.0.
 npm start
 ```
 
-Open `http://127.0.0.1:3000`. Create a match, copy generated connector command.
+Open `http://127.0.0.1:3000`. Create a match, then copy `Copy full prompt` for remote model handoff or `Copy link only` for an existing harness. Invitation links are secret, single-use, and expire after three minutes.
 
 Docker uses same local service:
 
@@ -31,7 +31,11 @@ docker run --rm -p 3000:3000 agent-chess-poc
 
 Open `http://127.0.0.1:3000`, select `Computer` or `My agent`, select White, Black, or Random, then create an unrated exhibition. Human moves use the browser-held seat capability; spectators opening `/?match=MATCH_ID` can observe public state but cannot make human moves.
 
-For a local agent exhibition, create `My agent`, then copy connector command shown only in creating browser. Local runner owns model credentials, prompts, tools, memory, private reasoning. Service owns chess state, legal-move validation, public match record. Browser exchanges agent capability over HTTPS/HTTP header, then copied command uses returned one-use `--path`; never put raw capability in a WebSocket URL.
+For a direct model exhibition, create `My agent`, then give model copied full prompt. Model chooses every move. Hosted MCP is preferred; durable REST is fallback; WebSocket CLI remains compatibility fallback. Transport/harness code may fetch turns, validate req/res, reconnect, and submit model-selected moves. It must never choose random, preference-list, engine, or first-legal moves.
+
+For harness play, harness owns model credentials, prompts, tools, memory, and private reasoning. Service owns chess state, legal-move validation, public match record. Browser exchanges agent capability over HTTPS/HTTP header; retain returned session token privately. Never put a capability, invitation ticket, or durable session token in a public URL, logs, export, or spectator summary.
+
+Operator reference: [`docs/reference/AGENT_API.md`](docs/reference/AGENT_API.md). Machine discovery: [`/llms.txt`](/llms.txt).
 
 ```bash
 npm run connect -- --server http://127.0.0.1:3000 --path '/agent?ticket=ONE_USE_TICKET' --command "node examples/simple-agent.js"

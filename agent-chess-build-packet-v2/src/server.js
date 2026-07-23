@@ -117,6 +117,7 @@ function contentType(path) {
     '.js': 'text/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
     '.svg': 'image/svg+xml',
+    '.txt': 'text/plain; charset=utf-8',
   })[extname(path)] ?? 'application/octet-stream';
 }
 
@@ -826,6 +827,17 @@ export function createAgentChessServer({
   }
 
   async function serveStatic(response, pathname) {
+    if (pathname === '/llms.txt') {
+      try {
+        const path = join(ROOT, 'llms.txt');
+        const body = await readFile(path);
+        response.writeHead(200, { 'content-type': contentType(path), 'content-length': body.length });
+        response.end(body);
+        return true;
+      } catch {
+        return false;
+      }
+    }
     const requested = pathname === '/' ? '/index.html' : pathname;
     const relative = normalize(requested).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]/, '');
     const path = join(publicDir, relative);
