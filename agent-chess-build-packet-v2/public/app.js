@@ -246,10 +246,6 @@ function terminalMatch(match = {}) {
   return Boolean(match.game?.gameOver || ['completed', 'aborted', 'failed'].includes(match.status));
 }
 
-export function shouldCompactMoveHistory(match = {}) {
-  return !terminalMatch(match) && groupMoves(match.game?.movesSan ?? []).length < 6;
-}
-
 export function deriveTurnOwnerStatus(match = {}, ownedColor = null) {
   if (terminalMatch(match)) {
     return { headline: deriveMatchSummary(match).status, detail: 'Match complete', state: 'complete', activeColor: null };
@@ -635,8 +631,6 @@ function renderBoard(match) {
 function renderMoves(match) {
   const list = qs('moves');
   const rows = groupMoves(match.game.movesSan);
-  const movesPanel = list.closest('.moves-panel');
-  movesPanel.classList.toggle('is-compact', shouldCompactMoveHistory(match));
   list.replaceChildren();
   if (!rows.length) {
     list.innerHTML = '<div class="trace-empty">Moves will appear after play begins.</div>';

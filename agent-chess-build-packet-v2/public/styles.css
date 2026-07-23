@@ -222,10 +222,14 @@ dialog::backdrop { background: #0009; }
   .control-rail { height: calc(var(--live-board-size) + 144px); max-height: none; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 2px; }
   .connector-card, .panel { padding: 11px; }
   .control-rail { gap: 8px; }
-  .moves-panel { min-height: 0; flex: 1 1 auto; overflow: hidden; }
-  .moves-panel.is-compact { flex: 0 0 auto; }
-  .moves-panel.is-compact .moves { max-height: none; }
-  .moves-panel .moves { max-height: 100%; }
+  .connector-card.connected + .decision-panel { flex: 0 0 280px; min-height: 280px; max-height: 280px; overflow: hidden; grid-template-rows: auto minmax(40px, auto) 82px minmax(0, 1fr) auto; }
+  .decision-panel .panel-title { margin-bottom: 0; }
+  .decision-intent { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .thought-ticker { height: 82px; align-content: end; overflow: hidden; }
+  .decision-candidates { min-height: 0; overflow-y: auto; }
+  .moves-panel { min-height: 0; flex: 1 1 0; overflow: hidden; display: flex; flex-direction: column; }
+  .moves-panel .panel-title { flex: 0 0 auto; }
+  .moves-panel .moves { min-height: 0; flex: 1 1 0; max-height: none; }
 }
 @media (max-width: 1020px) {
   .match-layout { grid-template-columns: minmax(0, 1fr); }

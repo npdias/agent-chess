@@ -11,7 +11,6 @@ const derivePlayerState = appModule.derivePlayerState ?? (() => '');
 const derivePostGameInterview = appModule.derivePostGameInterview ?? (() => ({}));
 const deriveBalanceOfPower = appModule.deriveBalanceOfPower ?? (() => ({}));
 const hasAgentJoined = appModule.hasAgentJoined ?? (() => false);
-const shouldCompactMoveHistory = appModule.shouldCompactMoveHistory ?? (() => false);
 const selectThoughtTicker = appModule.selectThoughtTicker ?? (() => []);
 const buildAgentHandoffPrompt = appModule.buildAgentHandoffPrompt ?? (() => '');
 
@@ -489,18 +488,21 @@ test('uses mode-neutral move-history empty copy', async () => {
   assert.doesNotMatch(app, /Moves will appear after the agent connects\./);
 });
 
-test('keeps early live move history content-sized and expands established games', async () => {
-  assert.equal(shouldCompactMoveHistory({ status: 'active', game: { movesSan: [] } }), true);
-  assert.equal(shouldCompactMoveHistory({ status: 'active', game: { movesSan: ['e4', 'e5', 'Nf3', 'Nc6'] } }), true);
-  assert.equal(shouldCompactMoveHistory({ status: 'active', game: { movesSan: Array.from({ length: 12 }, (_, index) => `m${index}`) } }), false);
-  assert.equal(shouldCompactMoveHistory({ status: 'completed', game: { gameOver: true, movesSan: [] } }), false);
-
+test('keeps live move history flex stable across every ply', async () => {
   const [app, css] = await Promise.all([
     readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
     readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
   ]);
-  assert.match(app, /movesPanel\.classList\.toggle\('is-compact', shouldCompactMoveHistory\(match\)\)/);
-  assert.match(css, /\.moves-panel\.is-compact\s*\{[^}]*flex:\s*0 0 auto/);
+  assert.doesNotMatch(app, /shouldCompactMoveHistory|is-compact/);
+  assert.doesNotMatch(css, /\.moves-panel\.is-compact/);
+  assert.match(css, /@media \(min-width:\s*1021px\)[\s\S]*?\.moves-panel\s*\{[^}]*flex:\s*1 1 0[^}]*overflow:\s*hidden/);
+});
+
+test('reserves stable desktop decision card geometry while its turn content changes', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /@media \(min-width:\s*1021px\)[\s\S]*?\.connector-card\.connected \+ \.decision-panel\s*\{[^}]*flex:\s*0 0 280px[^}]*min-height:\s*280px[^}]*max-height:\s*280px[^}]*overflow:\s*hidden/);
+  assert.match(css, /@media \(min-width:\s*1021px\)[\s\S]*?\.decision-candidates\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/);
+  assert.match(css, /@media \(min-width:\s*1021px\)[\s\S]*?\.decision-intent\s*\{[^}]*-webkit-line-clamp:\s*2[^}]*overflow:\s*hidden/);
 });
 
 test('collapses connected onboarding to a slim status row', async () => {
