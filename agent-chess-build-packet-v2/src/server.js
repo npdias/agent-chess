@@ -34,6 +34,14 @@ function rejectedTurnId(raw) {
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PUBLIC_DIR = join(ROOT, 'public');
+const REST_SCHEMAS = Object.freeze({
+  decision: { turnId: 'string', source: 'string', phase: 'string', summary: 'string', selectedMove: 'uci' },
+  move: { turnId: 'string', moveUci: 'uci' },
+});
+const REST_ACTION_ORDER = Object.freeze([
+  'Claim invitation.', 'Read match or await turn.', 'List legal moves.', 'Publish sanitized decision.', 'Submit move.', 'Read result.',
+]);
+const REST_RETRY = Object.freeze({ sameMove: 'idempotent', conflictingMove: 'CONFLICTING_REPLAY', staleTurn: 'STALE_TURN' });
 
 function sendJson(response, status, value, headers = {}) {
   const body = JSON.stringify(value);
@@ -144,7 +152,7 @@ export function createAgentChessServer({
       },
       connection: {
         wsUrl: `${protocol}//${host}/agent?ticket=${encodeURIComponent(ticket)}`,
-        rest: { claimUrl: `${request.socket.encrypted ? 'https:' : 'http:'}//${host}/api/agent/claim?ticket=${encodeURIComponent(ticket)}`, actions: AGENT_REST_ACTIONS },
+        rest: { claimUrl: `${request.socket.encrypted ? 'https:' : 'http:'}//${host}/api/agent/claim?ticket=${encodeURIComponent(ticket)}`, actions: AGENT_REST_ACTIONS, schemas: REST_SCHEMAS },
         mcp: { url: `${request.socket.encrypted ? 'https:' : 'http:'}//${host}/mcp/agent?ticket=${encodeURIComponent(ticket)}` },
         websocket: { url: `${protocol}//${host}/agent?ticket=${encodeURIComponent(ticket)}` },
       },
@@ -153,6 +161,8 @@ export function createAgentChessServer({
           'Open WebSocket.', 'Wait for match.start and turn.start.', 'Optionally request probes.',
           'Publish only sanitized status.', 'Submit legal UCI plus bounded publicTrace.', 'Handle accepted, rejected, and end.',
         ],
+        restActionOrder: REST_ACTION_ORDER,
+        retry: REST_RETRY,
       },
       messageFlow: {
         receive: ['match.start', 'turn.start', 'move.accepted', 'move.rejected', 'game.end'],
@@ -201,13 +211,13 @@ export function createAgentChessServer({
       ticket: invitation.claimToken,
       expiresAt: new Date(invitation.expiresAt).toISOString(),
       connection: {
-        rest: { claimUrl: `${protocol}//${host}/api/agent/claim?ticket=${ticket}`, actions: AGENT_REST_ACTIONS },
+        rest: { claimUrl: `${protocol}//${host}/api/agent/claim?ticket=${ticket}`, actions: AGENT_REST_ACTIONS, schemas: REST_SCHEMAS },
         mcp: { url: `${protocol}//${host}/mcp/agent?ticket=${ticket}` },
         websocket: { url: `${wsProtocol}//${host}/agent?ticket=${ticket}` },
       },
-      schemas: { decision: { turnId: 'string', source: 'string', phase: 'string', summary: 'string', selectedMove: 'uci' }, move: { turnId: 'string', moveUci: 'uci' } },
-      actionOrder: ['Claim invitation.', 'Read match or await turn.', 'List legal moves.', 'Publish sanitized decision.', 'Submit move.', 'Read result.'],
-      retry: { sameMove: 'idempotent', conflictingMove: 'CONFLICTING_REPLAY', staleTurn: 'STALE_TURN' },
+      schemas: REST_SCHEMAS,
+      actionOrder: REST_ACTION_ORDER,
+      retry: REST_RETRY,
     };
   }
 
@@ -548,10 +558,11 @@ export function createAgentChessServer({
       removeExpiredTickets();
       const binding = seatByToken.get(bearer(request));
       if (!binding || binding.kind !== 'agent') return sendJson(response, 401, { error: 'UNAUTHORIZED' }), true;
+      const issuedAt = ticketNow();
       const ticket = randomBytes(24).toString('base64url');
-      const expiresAt = new Date(ticketNow() + 180_000);
+      const expiresAt = new Date(issuedAt + 180_000);
       seatByTicket.set(ticket, { ...binding, matchId: binding.record.session.id, expiresAt: expiresAt.getTime() });
-      agentAccess.registerInvitation({ session: binding.record.session, color: binding.color, claimToken: ticket });
+      agentAccess.registerInvitation({ session: binding.record.session, color: binding.color, claimToken: ticket, createdAt: issuedAt });
       sendJson(response, 201, {
         ticket,
         wsPath: `/agent?ticket=${encodeURIComponent(ticket)}`,
@@ -612,12 +623,14 @@ export function createAgentChessServer({
         } else {
           const result = agentAccess.submitMove(access.token, body);
           const record = matches.get(access.matchId);
-          clearDecisionDeadline(record);
-          record.deadlineTurnId = null;
-          broadcastState(record);
           sendJson(response, 202, result);
-          await pauseTurnTransition(record);
-          await advance(record);
+          if (!result.replayed) {
+            clearDecisionDeadline(record);
+            record.deadlineTurnId = null;
+            broadcastState(record);
+            await pauseTurnTransition(record);
+            await advance(record);
+          }
         }
       } catch (error) {
         const code = errorCode(error);

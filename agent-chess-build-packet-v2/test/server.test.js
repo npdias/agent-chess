@@ -377,9 +377,56 @@ test('durable REST agent session claims an invitation then submits an idempotent
     const replay = await fetch(`${address.httpUrl}/api/agent/move`, {
       method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(move),
     });
-    assert.deepEqual(await replay.json(), await first.clone().json());
-    assert.equal((await fetch(`${address.httpUrl}/api/agent/turn?after=${turn.turnId}&waitMs=0`, { headers: auth })).status, 200);
+    assert.equal((await replay.json()).replayed, true);
+    assert.equal((await first.clone().json()).replayed, false);
+    const poll = await fetch(`${address.httpUrl}/api/agent/turn?after=${turn.turnId}&waitMs=0`, { headers: auth });
+    assert.deepEqual(await poll.json(), { turn: null, timeout: true });
+    const conflicting = await fetch(`${address.httpUrl}/api/agent/move`, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ ...move, moveUci: 'd2d4' }),
+    });
+    assert.equal(conflicting.status, 409);
+    await fetch(`${address.httpUrl}/api/matches/${created.matchId}/resign`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.black}` },
+    });
+    const result = await fetch(`${address.httpUrl}/api/agent/result`, { headers: auth });
+    assert.equal((await result.json()).status, 'completed');
     assert.equal((await fetch(`${address.httpUrl}/api/agent/match`)).status, 401);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('REST same-move replay does not advance engine or replace current turn', async () => {
+  let engine;
+  class CountingStockfish extends FakeStockfish {
+    calls = 0;
+    async bestMove(fen) { this.calls += 1; return super.bestMove(fen); }
+  }
+  const server = createAgentChessServer({ stockfishFactory: async () => (engine = new CountingStockfish()) });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'engine', name: 'Engine' } },
+    });
+    const invite = await fetch(`${address.httpUrl}/api/agent-connections`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    }).then((response) => response.json());
+    const { sessionToken } = await fetch(invite.connection.rest.claimUrl, { method: 'POST' }).then((response) => response.json());
+    const auth = { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' };
+    const { turn } = await fetch(`${address.httpUrl}/api/agent/match`, { headers: auth }).then((response) => response.json());
+    await fetch(`${address.httpUrl}/api/agent/decision`, {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({ turnId: turn.turnId, summary: 'Claim center.', selectedMove: 'e2e4' }),
+    });
+    const move = { turnId: turn.turnId, moveUci: 'e2e4' };
+    await fetch(`${address.httpUrl}/api/agent/move`, { method: 'POST', headers: auth, body: JSON.stringify(move) });
+    const afterFirst = await fetch(`${address.httpUrl}/api/agent/match`, { headers: auth }).then((response) => response.json());
+    assert.equal(engine.calls, 1);
+    await fetch(`${address.httpUrl}/api/agent/move`, { method: 'POST', headers: auth, body: JSON.stringify(move) });
+    const afterReplay = await fetch(`${address.httpUrl}/api/agent/match`, { headers: auth }).then((response) => response.json());
+    assert.equal(engine.calls, 1);
+    assert.equal(afterReplay.turn.turnId, afterFirst.turn.turnId);
   } finally {
     await server.stop();
   }
@@ -415,6 +462,16 @@ test('agent invitation describes a valid single-use connection without leaking i
     assert.equal(contract.match.id, created.matchId);
     assert.equal(contract.seat.color, 'white');
     assert.equal(contract.connection.wsUrl, `${address.wsUrl}${ticket.wsPath}`);
+    assert.deepEqual(contract.connection.rest.schemas, {
+      decision: { turnId: 'string', source: 'string', phase: 'string', summary: 'string', selectedMove: 'uci' },
+      move: { turnId: 'string', moveUci: 'uci' },
+    });
+    assert.deepEqual(contract.instructions.restActionOrder, [
+      'Claim invitation.', 'Read match or await turn.', 'List legal moves.', 'Publish sanitized decision.', 'Submit move.', 'Read result.',
+    ]);
+    assert.deepEqual(contract.instructions.retry, {
+      sameMove: 'idempotent', conflictingMove: 'CONFLICTING_REPLAY', staleTurn: 'STALE_TURN',
+    });
     assert.match(contract.instructions.actionOrder.join(' '), /open WebSocket.*match.start.*turn.start.*submit legal UCI/i);
     assert.match(contract.security.secretHandling, /secret.*expires.*single-use/i);
     assert.deepEqual(contract.publicTrace.phases, ['observe', 'probe', 'evaluate', 'choose', 'submit']);
@@ -439,6 +496,9 @@ test('agent invitation describes a valid single-use connection without leaking i
     }).then((response) => response.json());
     ticketNow = Date.parse(expiringInvitation.expiresAt);
     assert.equal((await fetch(`${address.httpUrl}${expiringInvitation.joinPath}`)).status, 410);
+    assert.equal((await fetch(`${address.httpUrl}/api/agent/claim?ticket=${encodeURIComponent(expiringInvitation.ticket)}`, {
+      method: 'POST',
+    })).status, 410);
     const expired = new WebSocket(`${address.wsUrl}${expiringSocket.wsPath}`);
     await new Promise((resolve) => { expired.once('close', resolve); expired.once('error', resolve); });
     ticketNow = Date.now();

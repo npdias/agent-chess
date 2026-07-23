@@ -30,14 +30,15 @@ export function createAgentAccessService({ now = () => Date.now(), tokenFactory 
   }
 
   return {
-    registerInvitation({ session, color, claimToken: requestedClaimToken } = {}) {
+    registerInvitation({ session, color, claimToken: requestedClaimToken, createdAt: requestedCreatedAt } = {}) {
       if (!session || !['white', 'black'].includes(color) || session.seats?.[color]?.kind !== 'agent') {
         throw new Error('INVALID_INVITATION');
       }
       let claimToken = requestedClaimToken ?? opaqueToken();
       if (typeof claimToken !== 'string' || !claimToken) throw new Error('INVALID_INVITATION');
       while (invitations.has(claimToken)) claimToken = opaqueToken();
-      const invitation = { claimToken, session, color, createdAt: now(), expiresAt: now() + INVITATION_TTL_MS, claimedAt: null };
+      const createdAt = requestedCreatedAt ?? now();
+      const invitation = { claimToken, session, color, createdAt, expiresAt: createdAt + INVITATION_TTL_MS, claimedAt: null };
       invitations.set(claimToken, invitation);
       return { claimToken, matchId: session.id, color, expiresAt: invitation.expiresAt };
     },
@@ -102,14 +103,14 @@ export function createAgentAccessService({ now = () => Date.now(), tokenFactory 
       const binding = bindingFor(sessionToken);
       const last = binding.lastAccepted;
       if (last?.turnId === turnId) {
-        if (last.moveUci === moveUci) return last.result;
+        if (last.moveUci === moveUci) return { ...last.result, replayed: true };
         throw new Error('CONFLICTING_REPLAY');
       }
       if (!activeTurnFor(binding) || activeTurnFor(binding).turnId !== turnId) throw new Error('STALE_TURN');
       const applied = binding.session.submitSeatMove({
         color: binding.color, turnId, moveUci, publicTrace: publicTrace ? parsePublicTrace(publicTrace) : binding.decisions.get(turnId),
       });
-      const result = { accepted: true, turnId, moveUci: applied.uci, moveSan: applied.san, terminal: binding.session.isTerminal() };
+      const result = { accepted: true, turnId, moveUci: applied.uci, moveSan: applied.san, terminal: binding.session.isTerminal(), replayed: false };
       binding.lastAccepted = { turnId, moveUci, result };
       return result;
     },

@@ -27,6 +27,19 @@ test('expires invitations after 180 seconds and allows only one claim', () => {
   assert.throws(() => service.claimInvitation(expired.claimToken), /INVITATION_EXPIRED/);
 });
 
+test('derives invitation expiry from one clock read and marks an accepted replay', () => {
+  let reads = 0;
+  const service = createAgentAccessService({ now: () => 1_000 + reads++, tokenFactory: () => 'token' });
+  const match = agentMatch();
+  const invitation = service.registerInvitation({ session: match, color: 'white' });
+  assert.equal(invitation.expiresAt, 181_000);
+  const { sessionToken } = service.claimInvitation(invitation.claimToken);
+  const turn = service.joinMatch(sessionToken).turn;
+  const first = service.submitMove(sessionToken, { turnId: turn.turnId, moveUci: 'e2e4' });
+  assert.equal(first.replayed, false);
+  assert.equal(service.submitMove(sessionToken, { turnId: turn.turnId, moveUci: 'e2e4' }).replayed, true);
+});
+
 test('keeps claimed session authenticated through terminal read and replays same move only', () => {
   let serial = 0;
   const service = createAgentAccessService({ tokenFactory: () => `token-${++serial}` });
@@ -37,7 +50,7 @@ test('keeps claimed session authenticated through terminal read and replays same
   assert.equal(service.authenticate(sessionToken).color, 'white');
   const first = service.submitMove(sessionToken, { turnId: turn.turnId, moveUci: 'e2e4' });
   assert.equal(first.accepted, true);
-  assert.deepEqual(service.submitMove(sessionToken, { turnId: turn.turnId, moveUci: 'e2e4' }), first);
+  assert.deepEqual(service.submitMove(sessionToken, { turnId: turn.turnId, moveUci: 'e2e4' }), { ...first, replayed: true });
   assert.throws(() => service.submitMove(sessionToken, { turnId: turn.turnId, moveUci: 'd2d4' }), /CONFLICTING_REPLAY/);
   match.resign('black');
   assert.equal(service.getResult(sessionToken).status, 'completed');
