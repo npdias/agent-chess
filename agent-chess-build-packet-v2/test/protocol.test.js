@@ -36,13 +36,13 @@ test('normalizes public trace attached to move submission', () => {
     type: 'move.submit', turnId: 'turn-1', moveUci: 'e2e4',
     publicTrace: {
       source: 'agent_reported', phase: 'choose', summary: 'Claim center.',
-      candidates: [{ uci: 'e2e4', note: 'Opens lines.' }], selectedMove: 'e2e4',
+      candidates: [{ uci: 'e2e4', note: 'Opens lines.' }], selectedMove: 'e2e4', confidence: 0.86, elapsedMs: 12_345,
     },
   }));
 
   assert.deepEqual(parsed.publicTrace, {
     source: 'agent_reported', phase: 'choose', summary: 'Claim center.',
-    candidates: [{ uci: 'e2e4', note: 'Opens lines.' }], selectedMove: 'e2e4',
+    candidates: [{ uci: 'e2e4', note: 'Opens lines.' }], selectedMove: 'e2e4', confidence: 0.86, elapsedMs: 12_345,
   });
 });
 test('normalizes valid UCI validation moves', () => {
@@ -111,5 +111,17 @@ test('rejects malformed trace candidate and selected UCI values', () => {
       })),
       /INVALID_MOVE_FORMAT/
     );
+  }
+});
+
+test('rejects invalid bounded public decision metrics', () => {
+  for (const trace of [
+    { confidence: -0.01 }, { confidence: 1.01 }, { confidence: '0.5' },
+    { elapsedMs: -1 }, { elapsedMs: 300_001 }, { elapsedMs: 1.5 },
+  ]) {
+    assert.throws(() => parseClientMessage(JSON.stringify({
+      type: 'move.submit', turnId: 'turn-1', moveUci: 'e2e4',
+      publicTrace: { summary: 'Choose e4.', selectedMove: 'e2e4', ...trace },
+    })), /INVALID_TRACE_METRIC/);
   }
 });

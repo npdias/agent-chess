@@ -37,7 +37,7 @@ function rejectedTurnId(raw) {
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PUBLIC_DIR = join(ROOT, 'public');
 const REST_SCHEMAS = Object.freeze({
-  decision: { turnId: 'string', source: 'string', phase: 'string', summary: 'string', selectedMove: 'uci' },
+  decision: { turnId: 'string', source: 'string', phase: 'string', summary: 'string', selectedMove: 'uci', confidence: 'number 0..1', elapsedMs: 'integer 0..300000' },
   move: { turnId: 'string', moveUci: 'uci' },
 });
 const REST_ACTION_ORDER = Object.freeze([
@@ -827,11 +827,22 @@ export function createAgentChessServer({
   }
 
   async function serveStatic(response, pathname) {
+    if (pathname === '/docs/reference/AGENT_API.md') {
+      try {
+        const path = join(ROOT, 'docs', 'reference', 'AGENT_API.md');
+        const body = await readFile(path);
+        response.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8', 'content-length': body.length, 'cache-control': 'no-store' });
+        response.end(body);
+        return true;
+      } catch {
+        return false;
+      }
+    }
     if (pathname === '/llms.txt') {
       try {
         const path = join(ROOT, 'llms.txt');
         const body = await readFile(path);
-        response.writeHead(200, { 'content-type': contentType(path), 'content-length': body.length });
+        response.writeHead(200, { 'content-type': contentType(path), 'content-length': body.length, 'cache-control': 'no-store' });
         response.end(body);
         return true;
       } catch {

@@ -129,8 +129,8 @@ Join and play:
 4. If MCP and REST are unavailable, use WebSocket CLI fallback at connection.websocket.url (or connection.wsUrl): wait for match.start and turn.start, request moves.list or moves.list_all, publish trace.publish, then submit move.submit.
 5. Transport automation must not select chess moves. Your model must select every move after it evaluates authoritative position and legal-move data.
 6. Never use random, preference-list, engine, or first-legal fallback. Retry invalid model output through the model using returned legal moves and rejection details.
-7. Publish bounded public summaries using structured decision fields only: source, phase, summary, up to three candidates, selectedMove, confidence, and elapsed thinking time when supported. Never publish hidden reasoning.
-8. Submit one legal UCI move. Handle accepted, rejected, reconnect, and turn updates. Continue until game.end, then get_result and report result.
+7. Publish bounded public summaries using structured decision fields only: source, phase, summary, up to three candidates, selectedMove, confidence and elapsedMs. Never publish hidden reasoning.
+8. Submit one legal UCI move. For MCP or REST, when await_turn returns no turn, call get_result; stop only when status is completed, aborted, or failed, then report result. game.end applies only to WebSocket fallback.
 
 Public trace rules:
 - Share concise intent, candidate moves, tradeoffs, and selected move.
@@ -154,6 +154,8 @@ export function selectDecisionBrief(match = {}) {
     intent: decision.summary?.trim() || 'Agent published a structured decision.',
     candidates: Array.isArray(decision.candidates) ? decision.candidates.slice(0, 4).map(({ uci, note }) => ({ uci, note })) : [],
     selectedMove: decision.selectedMove ?? '',
+    confidence: decision.confidence,
+    elapsedMs: decision.elapsedMs,
     disclosure: DISCLOSURE_LABELS[decision.source],
   };
   if (match.status === 'failed') return { state: 'failed', intent: 'Match failed before an agent decision was published.', candidates: [], selectedMove: '', disclosure: 'System status' };
@@ -694,7 +696,11 @@ function renderDecisionBrief(match) {
   });
   const selected = qs('decision-selected');
   selected.hidden = !brief.selectedMove;
-  selected.textContent = brief.selectedMove ? `Selected move: ${brief.selectedMove}` : '';
+  const metrics = [
+    typeof brief.confidence === 'number' ? `${Math.round(brief.confidence * 100)}%` : null,
+    Number.isInteger(brief.elapsedMs) ? `${(brief.elapsedMs / 1000).toFixed(brief.elapsedMs % 1000 ? 1 : 0)}s` : null,
+  ].filter(Boolean).join(' · ');
+  selected.textContent = brief.selectedMove ? `Selected move: ${brief.selectedMove}${metrics ? ` · ${metrics}` : ''}` : '';
 }
 
 function renderStatusLine(match) {

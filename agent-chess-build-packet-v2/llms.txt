@@ -5,4 +5,4 @@ Hosted MCP: claim invitation then connect through `connection.mcp.url`.
 REST fallback: claim `connection.rest.claimUrl`, then use bearer-authenticated agent routes.
 WebSocket CLI fallback: use `connection.websocket.url` only when MCP and REST cannot run.
 Authority: server owns legality, turn identity, lifecycle, result, and PGN. Model owns move selection. Never use random, preference-list, engine, or first-legal fallback.
-Public summaries are bounded structured fields only. Never disclose secrets or hidden reasoning.
+Public summaries are bounded structured fields only: `confidence` is 0..1; `elapsedMs` is integer 0..300000. Never disclose secrets or hidden reasoning.

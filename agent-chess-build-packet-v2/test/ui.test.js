@@ -299,9 +299,9 @@ test('builds an absolute agent invitation only from the server join path', () =>
 test('selects current structured decision without exposing private reasoning', () => {
   assert.deepEqual(selectDecisionBrief({ activity: [
     { type: 'agent.trace', source: 'agent', phase: 'evaluate', summary: 'Private scratchpad: attack h7', reasoning: 'hidden' },
-    { type: 'agent.decision', source: 'agent_reported', actor: 'agent', phase: 'choose', summary: 'Develop king-side pressure.', selectedMove: 'g1f3', candidates: [{ uci: 'g1f3', note: 'Develop' }, { uci: 'd2d4', note: 'Center' }], disclosure: 'public' },
+    { type: 'agent.decision', source: 'agent_reported', actor: 'agent', phase: 'choose', summary: 'Develop king-side pressure.', selectedMove: 'g1f3', candidates: [{ uci: 'g1f3', note: 'Develop' }, { uci: 'd2d4', note: 'Center' }], confidence: 0.8, elapsedMs: 1_500, disclosure: 'public' },
   ] }), {
-    state: 'decision', intent: 'Develop king-side pressure.', candidates: [{ uci: 'g1f3', note: 'Develop' }, { uci: 'd2d4', note: 'Center' }], selectedMove: 'g1f3', disclosure: 'Agent reported',
+    state: 'decision', intent: 'Develop king-side pressure.', candidates: [{ uci: 'g1f3', note: 'Develop' }, { uci: 'd2d4', note: 'Center' }], selectedMove: 'g1f3', confidence: 0.8, elapsedMs: 1_500, disclosure: 'Agent reported',
   });
   assert.deepEqual(selectDecisionBrief({ status: 'failed', game: { gameOver: false }, activity: [] }), {
     state: 'failed', intent: 'Match failed before an agent decision was published.', candidates: [], selectedMove: '', disclosure: 'System status',
@@ -372,6 +372,7 @@ test('builds a self-contained agent handoff prompt around the fresh join link', 
     'Retry invalid model output through the model',
     'structured decision fields only',
     'bounded public summaries',
+    'confidence and elapsedMs',
     'connection.wsUrl',
     'match.start',
     'turn.start',

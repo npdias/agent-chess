@@ -27,6 +27,8 @@ const trace = {
   summary: z.string().min(1).max(500),
   candidates: z.array(z.object({ uci: z.string(), note: z.string().max(160).optional() })).max(3).optional(),
   selectedMove: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  elapsedMs: z.number().int().min(0).max(300_000).optional(),
 };
 const statusTrace = {
   source: z.enum(['agent_reported', 'provider_summary', 'adapter_generated']).optional(),

@@ -97,9 +97,11 @@ test('MCP invitation claims once, exposes deterministic tools, and delegates a p
 
     const decision = content(await connected.client.callTool({ name: 'publish_decision', arguments: {
       turnId: turn.turnId, source: 'agent_reported', phase: 'choose', summary: 'Develops king side safely.',
-      candidates: [{ uci: 'e2e4', note: 'Claims center.' }], selectedMove: 'e2e4',
+      candidates: [{ uci: 'e2e4', note: 'Claims center.' }], selectedMove: 'e2e4', confidence: 0.8, elapsedMs: 1_500,
     } }));
     assert.equal(decision.accepted, true);
+    assert.equal(decision.publicTrace.confidence, 0.8);
+    assert.equal(decision.publicTrace.elapsedMs, 1_500);
 
     const submitted = content(await connected.client.callTool({ name: 'submit_move', arguments: { turnId: turn.turnId, moveUci: 'e2e4' } }));
     assert.equal(submitted.accepted, true);

@@ -66,6 +66,12 @@ export function parsePublicTrace(value) {
   )) {
     throw new Error(ERROR_CODES.INVALID_MOVE_FORMAT);
   }
+  if (value.confidence !== undefined && (!Number.isFinite(value.confidence) || value.confidence < 0 || value.confidence > 1)) {
+    throw new Error('INVALID_TRACE_METRIC');
+  }
+  if (value.elapsedMs !== undefined && (!Number.isInteger(value.elapsedMs) || value.elapsedMs < 0 || value.elapsedMs > 300_000)) {
+    throw new Error('INVALID_TRACE_METRIC');
+  }
 
   const source = typeof value.source === 'string' && value.source.trim()
     ? value.source.trim() : 'agent_reported';
@@ -79,6 +85,8 @@ export function parsePublicTrace(value) {
       note: typeof candidate.note === 'string' ? candidate.note.trim().slice(0, 160) : '',
     })) : [],
     selectedMove: value.selectedMove ?? null,
+    ...(value.confidence !== undefined ? { confidence: value.confidence } : {}),
+    ...(value.elapsedMs !== undefined ? { elapsedMs: value.elapsedMs } : {}),
   };
 }
 

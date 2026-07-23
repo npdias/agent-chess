@@ -108,7 +108,7 @@ test('commits submitted public trace as one agent decision activity', () => {
     turnId: turn.turnId, moveUci: 'e2e4',
     publicTrace: {
       source: 'agent_reported', phase: 'choose', summary: 'Claim center.',
-      candidates: [{ uci: 'e2e4', note: 'Opens lines.' }], selectedMove: 'e2e4',
+      candidates: [{ uci: 'e2e4', note: 'Opens lines.' }], selectedMove: 'e2e4', confidence: 0.88, elapsedMs: 9_800,
     },
   });
 
@@ -116,6 +116,9 @@ test('commits submitted public trace as one agent decision activity', () => {
   assert.equal(decisions.length, 1);
   assert.equal(decisions[0].selectedMove, 'e2e4');
   assert.deepEqual(decisions[0].candidates, [{ uci: 'e2e4', note: 'Opens lines.' }]);
+  assert.equal(decisions[0].confidence, 0.88);
+  assert.equal(decisions[0].elapsedMs, 9_800);
+  assert.equal(JSON.stringify(decisions[0]).includes('private reasoning'), false);
   assert.equal(match.snapshot().activity.some((entry) => entry.type === 'agent.trace'), false);
 });
 

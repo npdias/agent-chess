@@ -52,13 +52,19 @@ test('preserves bounded structured decision trace fields from command output', (
     moveUci: 'e2e4',
     trace: {
       kind: 'decision', phase: 'choose', summary: 'Claim center.',
-      candidates: [{ uci: 'e2e4', note: 'Space.' }], selectedMove: 'e2e4',
+      candidates: [{ uci: 'e2e4', note: 'Space.' }], selectedMove: 'e2e4', confidence: 0.75, elapsedMs: 4_200,
     },
   }), turn);
   assert.deepEqual(parsed.trace, {
     source: 'agent_reported', kind: 'decision', phase: 'choose', summary: 'Claim center.',
-    candidates: [{ uci: 'e2e4', note: 'Space.' }], selectedMove: 'e2e4',
+    candidates: [{ uci: 'e2e4', note: 'Space.' }], selectedMove: 'e2e4', confidence: 0.75, elapsedMs: 4_200,
   });
+});
+
+test('rejects invalid command decision metrics before submission', () => {
+  assert.throws(() => parseAgentOutput(JSON.stringify({
+    moveUci: 'e2e4', trace: { summary: 'Claim center.', confidence: 2 },
+  }), turn), /INVALID_TRACE_METRIC/);
 });
 
 test('preserves an allowed command trace source and defaults absent source to agent reported', () => {

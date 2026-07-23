@@ -105,6 +105,10 @@ test('serves machine discovery map from /llms.txt', async () => {
     assert.match(discovery, /hosted MCP/i);
     assert.match(discovery, /REST/i);
     assert.match(discovery, /WebSocket CLI/i);
+    const api = await fetch(`${address.httpUrl}/docs/reference/AGENT_API.md`);
+    assert.equal(api.status, 200);
+    assert.match(api.headers.get('content-type') ?? '', /^text\/markdown/);
+    assert.match(await api.text(), /# Agent Chess agent API/);
   } finally {
     await server.stop();
   }
@@ -382,7 +386,7 @@ test('durable REST agent session claims an invitation then submits an idempotent
     const legal = await fetch(`${address.httpUrl}/api/agent/legal-moves?turnId=${turn.turnId}`, { headers: auth });
     assert.equal(legal.status, 200);
     assert.ok((await legal.json()).moves.some((move) => move.uci === 'e2e4'));
-    const decision = { turnId: turn.turnId, source: 'agent_reported', phase: 'choose', summary: 'Claim center.', selectedMove: 'e2e4' };
+    const decision = { turnId: turn.turnId, source: 'agent_reported', phase: 'choose', summary: 'Claim center.', selectedMove: 'e2e4', confidence: 0.82, elapsedMs: 2_400 };
     assert.equal((await fetch(`${address.httpUrl}/api/agent/decision`, {
       method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(decision),
     })).status, 202);
@@ -391,6 +395,10 @@ test('durable REST agent session claims an invitation then submits an idempotent
       method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(move),
     });
     assert.equal(first.status, 202);
+    const publicDecision = (await getMatch(address, created.matchId)).activity.find((entry) => entry.type === 'agent.decision');
+    assert.equal(publicDecision.confidence, 0.82);
+    assert.equal(publicDecision.elapsedMs, 2_400);
+    assert.equal(JSON.stringify(publicDecision).includes('private reasoning'), false);
     const replay = await fetch(`${address.httpUrl}/api/agent/move`, {
       method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(move),
     });
@@ -480,7 +488,7 @@ test('agent invitation describes a valid single-use connection without leaking i
     assert.equal(contract.seat.color, 'white');
     assert.equal(contract.connection.wsUrl, `${address.wsUrl}${ticket.wsPath}`);
     assert.deepEqual(contract.connection.rest.schemas, {
-      decision: { turnId: 'string', source: 'string', phase: 'string', summary: 'string', selectedMove: 'uci' },
+      decision: { turnId: 'string', source: 'string', phase: 'string', summary: 'string', selectedMove: 'uci', confidence: 'number 0..1', elapsedMs: 'integer 0..300000' },
       move: { turnId: 'string', moveUci: 'uci' },
     });
     assert.deepEqual(contract.instructions.restActionOrder, [

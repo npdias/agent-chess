@@ -363,7 +363,7 @@ export class MatchSession {
     }
   }
 
-  _recordActivity({ type, source, actor = null, kind = null, phase, turnId = null, summary = '', candidates, selectedMove = null, code = null, recoverable = null }) {
+  _recordActivity({ type, source, actor = null, kind = null, phase, turnId = null, summary = '', candidates, selectedMove = null, confidence, elapsedMs, code = null, recoverable = null }) {
     const entry = {
       type,
       source,
@@ -380,6 +380,8 @@ export class MatchSession {
         }))
         : [],
       selectedMove: selectedMove ? String(selectedMove).trim() : null,
+      ...(confidence !== undefined ? { confidence } : {}),
+      ...(elapsedMs !== undefined ? { elapsedMs } : {}),
       ...(code ? { code } : {}),
       ...(typeof recoverable === 'boolean' ? { recoverable } : {}),
     };

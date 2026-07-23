@@ -21,6 +21,12 @@ function parseTrace(parsed) {
   const source = suppliedSource == null || suppliedSource === '' ? 'agent_reported' : suppliedSource;
   if (!TRACE_SOURCES.has(source)) throw new Error('INVALID_TRACE_SOURCE');
   if (!parsed.trace?.summary) return null;
+  if (parsed.trace.confidence !== undefined && (!Number.isFinite(parsed.trace.confidence) || parsed.trace.confidence < 0 || parsed.trace.confidence > 1)) {
+    throw new Error('INVALID_TRACE_METRIC');
+  }
+  if (parsed.trace.elapsedMs !== undefined && (!Number.isInteger(parsed.trace.elapsedMs) || parsed.trace.elapsedMs < 0 || parsed.trace.elapsedMs > 300_000)) {
+    throw new Error('INVALID_TRACE_METRIC');
+  }
   return {
     source,
     kind: parsed.trace.kind === 'decision' ? 'decision' : 'status',
@@ -31,6 +37,8 @@ function parseTrace(parsed) {
       .slice(0, 3)
       .map((candidate) => ({ uci: String(candidate.uci).trim(), note: String(candidate?.note ?? '').trim().slice(0, 160) })) : [],
     selectedMove: UCI_PATTERN.test(String(parsed.trace.selectedMove ?? '').trim()) ? String(parsed.trace.selectedMove).trim() : null,
+    ...(parsed.trace.confidence !== undefined ? { confidence: parsed.trace.confidence } : {}),
+    ...(parsed.trace.elapsedMs !== undefined ? { elapsedMs: parsed.trace.elapsedMs } : {}),
   };
 }
 
