@@ -115,3 +115,25 @@ Inspect network messages and server logs. Confirm they contain no:
 - Private chain-of-thought
 - Local file contents
 - Agent memory
+
+## K. Hosted agent access E2E
+
+Run:
+
+```bash
+node --test --test-concurrency=1 test/agent-access-e2e.test.js
+```
+
+Proof covers a REST agent as White plus hosted-MCP agent as Black against fake engines. Each agent completes two turns; REST same-move replay returns `replayed: true`; MCP publishes bounded public status plus decision; snapshot/export omit invitation, durable-session, seat capability secrets. A bounded decision deadline produces authoritative terminal `failed` result read through REST.
+
+## L. Desktop access proof
+
+At `1280x720`, create Agent vs Computer, mint/connect agent invitation, advance at least two plies, then verify:
+
+- `document.documentElement.scrollHeight <= window.innerHeight`
+- board width equals board height
+- right rail retains stable dimensions
+- connector collapses after connection
+- visible state identifies active turn owner
+
+Evidence: `output/ux-validation/agent-access-1280x720.png`.
