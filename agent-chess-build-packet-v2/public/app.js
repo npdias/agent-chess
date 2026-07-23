@@ -1,4 +1,6 @@
-import { canHumanMove, selectHumanSquare, buildHumanMove, capabilityStorageEntries, deriveExhibitionSummary, materialSummary, replayPlyForMove, controllerColor, consumeSuppressedClick, displayedSeats } from './board-interaction.js';
+import { canHumanMove, selectHumanSquare, buildHumanMove, capabilityStorageEntries, deriveExhibitionSummary, deriveOutcome, materialSummary, replayPlyForMove, controllerColor, consumeSuppressedClick, displayedSeats } from './board-interaction.js';
+
+export { deriveOutcome };
 
 const PIECES = {
   K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
@@ -251,7 +253,8 @@ function terminalMatch(match = {}) {
 
 export function deriveTurnOwnerStatus(match = {}, ownedColor = null) {
   if (terminalMatch(match)) {
-    return { headline: deriveMatchSummary(match).status, detail: 'Match complete', state: 'complete', activeColor: null };
+    const outcome = deriveOutcome(match);
+    return { headline: outcome.headline, detail: outcome.secondary, state: 'complete', activeColor: null };
   }
   const activeColor = match.game?.turn ?? null;
   const seat = match.seats?.[activeColor] ?? {};
@@ -267,7 +270,12 @@ export function deriveTurnOwnerStatus(match = {}, ownedColor = null) {
 }
 
 export function derivePlayerState(match = {}, color, ownedColor = null) {
-  if (terminalMatch(match)) return 'Finished';
+  if (terminalMatch(match)) {
+    const outcome = deriveOutcome(match);
+    if (outcome.kind === 'decisive') return color === outcome.winnerColor ? 'Winner' : 'Lost';
+    if (outcome.kind === 'draw') return 'Draw';
+    return 'Finished';
+  }
   if (match.game?.turn !== color) return 'Watching';
   const seat = match.seats?.[color] ?? {};
   if (seat.kind === 'agent') return match.connected ? 'Thinking' : 'Connecting';
@@ -329,9 +337,11 @@ export function derivePostGameInterview(match = {}) {
     : 'Public move record shows no single material swing large enough to name a turning point.';
   const finalIndex = moves.length - 1;
   const finalMove = finalIndex >= 0 ? moveLabel(finalIndex, moves[finalIndex]) : '';
+  const outcome = deriveOutcome(match);
+  const finishingName = outcome.kind === 'decisive' ? outcome.winnerName : opponentName;
   const pressure = match.game?.checkmate && finalMove
-    ? `${opponentName} converted the final attack with ${finalMove}.`
-    : `${opponentName} completed the recorded result ${match.game?.result ?? '*'}.`;
+    ? `${finishingName} converted the final attack with ${finalMove}.`
+    : `${finishingName} completed the recorded result ${match.game?.result ?? '*'}.`;
   const rematch = largestDrop.points > 0
     ? `Before ${criticalMove}, recheck forcing captures and recaptures.`
     : 'Keep published plans concise, then recheck forcing moves before submission.';
@@ -718,11 +728,13 @@ function renderReview(match, summary) {
   const panel = qs('post-match');
   panel.hidden = !summary.review;
   if (!summary.review) return;
-  qs('review-headline').textContent = summary.status;
-  qs('review-copy').textContent = `Completed after ${summary.moveCount} full moves.`;
+  const outcome = summary.outcome ?? deriveOutcome(match);
+  qs('review-headline').textContent = outcome.headline;
+  qs('review-copy').textContent = `${outcome.secondary}. ${outcome.moveCount} full moves.`;
   const items = [
-    ['Final result', match.game.result],
-    ['Termination', summary.termination],
+    ...(outcome.kind === 'decisive' ? [['Winner', `${outcome.winnerName} · ${outcome.winnerColor[0].toUpperCase()}${outcome.winnerColor.slice(1)}`]] : []),
+    ['Result', outcome.resultLabel],
+    ['Termination', outcome.termination],
     ['White', match.seats.white.name],
     ['Trace events', String(match.trace.length)],
   ];
@@ -754,7 +766,9 @@ function renderPlayerStrips(match, summary = deriveMatchSummary(match)) {
     qs(`${position}-kind`).textContent = seat.kindLabel;
     qs(`${position}-avatar`).className = `avatar avatar-${seat.kind}`;
     qs(`${position}-avatar`).textContent = (seat.name ?? seat.kindLabel).slice(0, 2).toUpperCase();
-    qs(`${position}-state`).textContent = derivePlayerState(match, seat.color, ownedControllerColor);
+    const state = qs(`${position}-state`);
+    state.textContent = derivePlayerState(match, seat.color, ownedControllerColor);
+    state.dataset.outcome = state.textContent.toLowerCase();
   }
 }
 
@@ -781,7 +795,7 @@ function render(match) {
   qs('connection').textContent = match.connected ? 'Agent connected' : 'Live';
   qs('connection').dataset.connected = String(match.connected);
   qs('engine').textContent = 'Public match';
-  qs('match-title').textContent = summary.review ? summary.status : `${seats.white?.name ?? 'White'} vs ${seats.black?.name ?? 'Black'}`;
+  qs('match-title').textContent = summary.review ? (summary.outcome?.headline ?? deriveOutcome(match).headline) : `${seats.white?.name ?? 'White'} vs ${seats.black?.name ?? 'Black'}`;
   renderPlayerStrips(match, summary);
   qs('fen').textContent = match.game.fen;
   const material = materialSummary(match.game.positions?.[0] ?? match.game.fen, match.game.fen, materialPerspective(ownedControllerColor, humanColor));

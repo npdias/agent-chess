@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { buildExhibitionPayload, materialPerspective, buildAgentInviteUrl, selectDecisionBrief, deriveBoardTransitions, buildMaterialDisplay } from '../public/app.js';
 import * as appModule from '../public/app.js';
 import { spawnSync } from 'node:child_process';
-import { fenToBoard, shellQuote, squareName, deriveMatchSummary, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
+import { fenToBoard, shellQuote, squareName, deriveMatchSummary, deriveOutcome, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
 
 const deriveTurnOwnerStatus = appModule.deriveTurnOwnerStatus ?? (() => ({}));
 const derivePlayerState = appModule.derivePlayerState ?? (() => '');
@@ -55,9 +55,54 @@ test('derives live and completed match summary states', () => {
     status: 'completed', seats: { white: { name: 'Human' }, black: { name: 'Computer' } },
     game: { gameOver: true, turn: 'black', result: '1-0', checkmate: true, movesSan: ['e4', 'e5', 'Qh5'] },
   });
-  assert.equal(completed.status, 'Checkmate');
+  assert.equal(completed.status, 'Human wins');
   assert.equal(completed.resultLabel, '1-0');
   assert.equal(completed.termination, 'Checkmate');
+});
+
+test('derives decisive terminal outcome from result, seat, color, termination', () => {
+  const outcome = deriveOutcome({
+    status: 'completed', termination: 'checkmate',
+    seats: { white: { name: 'Luna' }, black: { name: 'Computer' } },
+    game: { gameOver: true, result: '0-1', checkmate: true, movesSan: ['e4', 'e5'] },
+  });
+
+  assert.deepEqual(outcome, {
+    terminal: true, kind: 'decisive', headline: 'Computer wins',
+    secondary: 'Black · 0–1 · Checkmate', resultLabel: '0-1', termination: 'Checkmate',
+    winnerColor: 'black', winnerName: 'Computer', moveCount: 1,
+  });
+});
+
+test('derives draw terminal outcome without a winner', () => {
+  assert.deepEqual(deriveOutcome({
+    status: 'completed', termination: 'draw', seats: { white: { name: 'Luna' }, black: { name: 'Computer' } },
+    game: { gameOver: true, draw: true, result: '1/2-1/2', movesSan: ['e4', 'e5'] },
+  }), {
+    terminal: true, kind: 'draw', headline: 'Draw', secondary: '1/2-1/2 · Draw',
+    resultLabel: '1/2-1/2', termination: 'Draw', winnerColor: null, winnerName: null, moveCount: 1,
+  });
+});
+
+test('does not invent a winner for aborted or failed matches', () => {
+  for (const [status, termination, result] of [['aborted', 'aborted', '*'], ['failed', 'failure', '1-0']]) {
+    const outcome = deriveOutcome({ status, termination, seats: { white: { name: '<img src=x>' }, black: { name: 'Computer' } }, game: { gameOver: false, result, movesSan: [] } });
+    assert.equal(outcome.kind, 'status');
+    assert.equal(outcome.winnerColor, null);
+    assert.equal(outcome.winnerName, null);
+    assert.equal(outcome.headline, status === 'aborted' ? 'Match aborted' : 'Match failed');
+  }
+});
+
+test('labels terminal player strips from truthful outcome only', () => {
+  const base = { seats: { white: { name: 'Luna' }, black: { name: 'Computer' } }, game: { gameOver: true, movesSan: [] } };
+  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, result: '1-0' } }, 'white'), 'Winner');
+  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, result: '1-0' } }, 'black'), 'Lost');
+  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, result: '0-1' } }, 'white'), 'Lost');
+  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, result: '0-1' } }, 'black'), 'Winner');
+  assert.equal(derivePlayerState({ ...base, status: 'completed', game: { ...base.game, draw: true, result: '1/2-1/2' } }, 'white'), 'Draw');
+  assert.equal(derivePlayerState({ ...base, status: 'aborted', game: { ...base.game, gameOver: false, result: '*' } }, 'white'), 'Finished');
+  assert.equal(derivePlayerState({ ...base, status: 'failed', game: { ...base.game, gameOver: false, result: '*' } }, 'black'), 'Finished');
 });
 
 test('groups SAN history into numbered move rows', () => {
@@ -81,6 +126,16 @@ test('derives verified turn phase or truthful waiting fallback', () => {
 test('labels completed matches without showing a live turn phase', () => {
   assert.deepEqual(deriveTurnPhase({ game: { gameOver: true }, activity: [{ phase: 'observe' }] }), {
     key: 'complete', label: 'Match complete',
+  });
+});
+
+test('uses terminal outcome in match status rather than generic completion', () => {
+  assert.deepEqual(deriveTurnOwnerStatus({
+    status: 'completed', termination: 'checkmate',
+    seats: { white: { name: 'Luna' }, black: { name: 'Computer' } },
+    game: { gameOver: true, result: '0-1', checkmate: true },
+  }), {
+    headline: 'Computer wins', detail: 'Black · 0–1 · Checkmate', state: 'complete', activeColor: null,
   });
 });
 
@@ -640,6 +695,36 @@ test('builds a post-game interview from public summaries and recorded material s
   assert.match(interview.pressure, /2\.\.\.Qxg2#/);
   assert.match(interview.rematch, /recaptures/);
   assert.match(interview.note, /No private reasoning/);
+});
+
+test('credits a winning agent in post-game checkmate copy', () => {
+  const interview = derivePostGameInterview({
+    status: 'completed', termination: 'checkmate',
+    seats: { white: { kind: 'agent', name: 'Luna' }, black: { kind: 'engine', name: 'Computer' } },
+    game: { gameOver: true, checkmate: true, result: '1-0', movesSan: ['e4', 'e5', 'Qh5', 'Nc6', 'Qxf7#'], positions: [] },
+  });
+  assert.match(interview.pressure, /^Luna converted/);
+});
+
+test('uses restrained terminal strip accents without adding a terminal surface', async () => {
+  const [app, css] = await Promise.all([
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  assert.match(app, /state\.dataset\.outcome = state\.textContent\.toLowerCase\(\)/);
+  assert.match(css, /\.clock\[data-outcome="winner"\]/);
+  assert.match(css, /\.clock\[data-outcome="lost"\]/);
+  assert.match(css, /\.clock\[data-outcome="draw"\]/);
+});
+
+test('keeps terminal winner explicit in compact post-game scan targets', async () => {
+  const [app, css] = await Promise.all([
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  assert.match(app, /outcome\.kind === 'decisive'[\s\S]*?\['Winner',/);
+  assert.match(css, /\.review-callout strong\s*\{[^}]*font-size:\s*1\.25rem/);
+  assert.match(css, /\.review-callout p\s*\{[^}]*font-size:\s*\.78rem/);
 });
 
 test('shows interview in terminal rail without adding another visible live-match surface', async () => {

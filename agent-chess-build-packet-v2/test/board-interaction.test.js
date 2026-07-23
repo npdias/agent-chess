@@ -170,7 +170,7 @@ test('stores returned color-keyed capabilities without assigning human or agent 
 
 test('derives generic controller and terminal review state from seats and lifecycle', () => {
   const match = { status: 'aborted', termination: 'aborted', seats: { white: { kind: 'human', name: 'N' }, black: { kind: 'engine', name: 'Computer' } }, game: { turn: 'black', result: '*', gameOver: false, movesSan: [] } };
-  assert.deepEqual(deriveExhibitionSummary(match), { status: 'Aborted', resultLabel: 'Aborted', termination: 'Aborted', moveCount: 0, review: true, activeName: 'Computer' });
+  assert.deepEqual(deriveExhibitionSummary(match), { status: 'Match aborted', resultLabel: 'No result', termination: 'Aborted', moveCount: 0, review: true, activeName: 'Computer' });
 });
 
 test('derives captured piece names and side-relative material difference', () => {

@@ -75,15 +75,67 @@ export function capabilityStorageEntries(matchId, capabilities = {}) {
   return Object.entries(capabilities).map(([color, capability]) => [`${matchId}:capability:${color}`, capability]);
 }
 
+function titleCase(value) {
+  return String(value ?? '')
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function outcomeTermination(match = {}, game = {}) {
+  if (match.termination) return titleCase(match.termination);
+  if (game.checkmate) return 'Checkmate';
+  if (game.draw) return 'Draw';
+  return '—';
+}
+
+export function deriveOutcome(match = {}) {
+  const game = match.game ?? {};
+  const seats = match.seats ?? {};
+  const terminal = ['completed', 'aborted', 'failed'].includes(match.status) || game.gameOver;
+  const resultCanDecideOutcome = terminal && !['aborted', 'failed'].includes(match.status)
+    && !['aborted', 'failure'].includes(match.termination);
+  const result = typeof game.result === 'string' ? game.result : '*';
+  const moveCount = Math.ceil((game.movesSan?.length ?? 0) / 2);
+  const termination = outcomeTermination(match, game);
+  const decisiveColor = result === '1-0' ? 'white' : result === '0-1' ? 'black' : null;
+
+  if (resultCanDecideOutcome && decisiveColor) {
+    const color = titleCase(decisiveColor);
+    const winnerName = seats[decisiveColor]?.name ?? color;
+    return {
+      terminal, kind: 'decisive', headline: `${winnerName} wins`,
+      secondary: `${color} · ${result.replace('-', '–')} · ${termination}`,
+      resultLabel: result, termination, winnerColor: decisiveColor, winnerName, moveCount,
+    };
+  }
+
+  if (resultCanDecideOutcome && (result === '1/2-1/2' || game.draw)) {
+    const resultLabel = result === '1/2-1/2' ? result : '1/2-1/2';
+    return {
+      terminal, kind: 'draw', headline: 'Draw', secondary: `${resultLabel} · ${termination}`,
+      resultLabel, termination, winnerColor: null, winnerName: null, moveCount,
+    };
+  }
+
+  const headline = match.status === 'aborted' || match.termination === 'aborted'
+    ? 'Match aborted'
+    : match.status === 'failed' || match.termination === 'failure'
+      ? 'Match failed'
+      : terminal ? 'Match complete' : '';
+  return {
+    terminal, kind: terminal ? 'status' : 'live', headline,
+    secondary: terminal ? (termination === '—' ? 'No result recorded' : termination) : '',
+    resultLabel: terminal ? 'No result' : 'In progress', termination,
+    winnerColor: null, winnerName: null, moveCount,
+  };
+}
+
 export function deriveExhibitionSummary(match = {}) {
   const game = match.game ?? {};
   const active = match.seats?.[game.turn] ?? {};
-  const terminal = ['completed', 'aborted', 'failed'].includes(match.status) || game.gameOver;
-  const termination = match.termination === 'aborted' ? 'Aborted'
-    : match.termination === 'resigned' ? 'Resigned'
-      : match.termination ? String(match.termination).replaceAll('_', ' ') : game.checkmate ? 'Checkmate' : game.draw ? 'Draw' : '—';
-  const status = terminal ? (termination[0]?.toUpperCase() + termination.slice(1)) : `${active.name ?? game.turn ?? 'Match'} to move`;
-  return { status, resultLabel: terminal ? (game.result === '*' || !game.result ? status : game.result) : 'In progress', termination, moveCount: Math.ceil((game.movesSan?.length ?? 0) / 2), review: terminal, activeName: active.name ?? '' };
+  const outcome = deriveOutcome(match);
+  const status = outcome.terminal ? outcome.headline : `${active.name ?? game.turn ?? 'Match'} to move`;
+  return { status, resultLabel: outcome.resultLabel, termination: outcome.termination, moveCount: outcome.moveCount, review: outcome.terminal, activeName: active.name ?? '' };
 }
 
 export function materialSummary(initialFen, currentFen, perspective = 'white') {
