@@ -114,6 +114,36 @@ test('serves machine discovery map from /llms.txt', async () => {
   }
 });
 
+test('propagates authoritative material through public state, export, and agent turn', async () => {
+  const server = createAgentChessServer();
+  const address = await server.start(0);
+  let socket;
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    const connection = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    }).then((response) => response.json());
+    socket = new WebSocket(`${address.wsUrl}${connection.wsPath}`);
+    const messages = collectMessages(socket);
+    await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+    const turn = await messages.next((message) => message.type === 'turn.start');
+    const state = await getMatch(address, created.matchId);
+    const exported = await fetch(`${address.httpUrl}/api/matches/${created.matchId}/export`).then((response) => response.json());
+
+    assert.deepEqual(turn.material, state.activeTurn.material);
+    assert.equal(turn.balanceForAgent, 0);
+    assert.deepEqual(state.game.material, turn.material);
+    assert.deepEqual(exported.material, turn.material);
+    assert.equal('balanceForAgent' in exported.material, false);
+  } finally {
+    socket?.close();
+    await server.stop();
+  }
+});
+
 test('publishes Stockfish evaluation without exposing engine internals', async () => {
   const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
   const address = await server.start(0);

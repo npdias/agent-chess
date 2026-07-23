@@ -320,6 +320,7 @@ export class MatchSession {
       pgn: this.game.pgn(),
       activity: this.snapshot().activity,
       positions: this.game.snapshot().positions,
+      material: this.game.snapshot().material,
     };
   }
 

@@ -91,6 +91,8 @@ function publicSnapshot(record) {
       turnId: turn.turnId,
       fen: turn.fen,
       ply: turn.ply,
+      material: turn.material,
+      balanceForAgent: turn.balanceForAgent,
       positionStatus: turn.positionStatus,
       deadline: turn.deadline,
       deadlineMs: turn.deadlineMs,

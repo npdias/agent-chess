@@ -10,6 +10,18 @@ const PIECE_NAMES = Object.freeze({
   k: 'king',
 });
 
+const MATERIAL_TYPES = Object.freeze(['p', 'n', 'b', 'r', 'q']);
+const MATERIAL_KEYS = Object.freeze({ p: 'pawns', n: 'knights', b: 'bishops', r: 'rooks', q: 'queens' });
+const PIECE_POINTS = Object.freeze({ p: 1, n: 3, b: 3, r: 5, q: 9 });
+
+function emptyMaterialCounts() {
+  return { pawns: 0, knights: 0, bishops: 0, rooks: 0, queens: 0 };
+}
+
+function inventoryWithPoints() {
+  return { ...emptyMaterialCounts(), points: 0 };
+}
+
 export function toUci(move) {
   return `${move.from}${move.to}${move.promotion ?? ''}`;
 }
@@ -69,6 +81,33 @@ export class AgentChessGame {
     return this.legalMoves().filter((move) => move.from === square);
   }
 
+  material() {
+    const white = inventoryWithPoints();
+    const black = inventoryWithPoints();
+    for (const piece of this.chess.board().flat()) {
+      if (!piece || !MATERIAL_TYPES.includes(piece.type)) continue;
+      const inventory = piece.color === 'w' ? white : black;
+      inventory[MATERIAL_KEYS[piece.type]] += 1;
+      inventory.points += PIECE_POINTS[piece.type];
+    }
+
+    const capturedByWhite = emptyMaterialCounts();
+    const capturedByBlack = emptyMaterialCounts();
+    for (const move of this.chess.history({ verbose: true })) {
+      if (!move.captured || !MATERIAL_TYPES.includes(move.captured)) continue;
+      const captures = move.color === 'w' ? capturedByWhite : capturedByBlack;
+      captures[MATERIAL_KEYS[move.captured]] += 1;
+    }
+
+    return {
+      white,
+      black,
+      balanceWhite: white.points - black.points,
+      capturedByWhite,
+      capturedByBlack,
+    };
+  }
+
   validateCandidate(moveUci) {
     const move = this.legalMoves().find((candidate) => candidate.uci === moveUci);
     return {
@@ -90,6 +129,7 @@ export class AgentChessGame {
     const sideToMove = this.chess.turn() === 'w' ? 'white' : 'black';
     if (agentColor !== sideToMove) throw new Error('NOT_AGENT_TURN');
 
+    const material = this.material();
     return {
       type: MESSAGE_TYPES.TURN_START,
       protocolVersion: PROTOCOL_VERSION,
@@ -100,6 +140,8 @@ export class AgentChessGame {
       sideToMove,
       fen: this.chess.fen({ forceEnpassantSquare: true }),
       ply: this.movesUci.length,
+      material,
+      balanceForAgent: agentColor === 'white' ? material.balanceWhite : -material.balanceWhite,
       recentMoves: this.getRecentMoves(recentMoveWindowPlies),
       positionStatus: {
         inCheck: this.chess.isCheck(),
@@ -138,6 +180,7 @@ export class AgentChessGame {
       movesSan: this.chess.history(),
       positions: [...this.positions],
       legalMoves: this.legalMoves(),
+      material: this.material(),
       inCheck: this.chess.isCheck(),
       gameOver: this.chess.isGameOver(),
       checkmate: this.chess.isCheckmate(),

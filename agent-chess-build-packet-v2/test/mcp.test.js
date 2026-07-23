@@ -74,6 +74,14 @@ test('MCP invitation claims once, exposes deterministic tools, and delegates a p
     assert.equal(joined.color, 'white');
     const turn = joined.turn;
     assert.ok(turn.turnId);
+    assert.deepEqual(turn.material, {
+      white: { pawns: 8, knights: 2, bishops: 2, rooks: 2, queens: 1, points: 39 },
+      black: { pawns: 8, knights: 2, bishops: 2, rooks: 2, queens: 1, points: 39 },
+      balanceWhite: 0,
+      capturedByWhite: { pawns: 0, knights: 0, bishops: 0, rooks: 0, queens: 0 },
+      capturedByBlack: { pawns: 0, knights: 0, bishops: 0, rooks: 0, queens: 0 },
+    });
+    assert.equal(turn.balanceForAgent, 0);
     assert.equal(JSON.stringify(joined).includes('sessionToken'), false);
 
     const waited = content(await connected.client.callTool({ name: 'await_turn', arguments: { after: 'old-turn', waitMs: 0 } }));

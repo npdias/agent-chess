@@ -73,7 +73,7 @@ test('builds compact turn without full legal list', () => {
   });
 
   assert.deepEqual(Object.keys(turn).sort(), [
-    'agentColor', 'deadline', 'fen', 'gameId', 'ply', 'positionStatus',
+    'agentColor', 'balanceForAgent', 'deadline', 'fen', 'gameId', 'material', 'ply', 'positionStatus',
     'protocolVersion', 'recentMoves', 'sideToMove', 'steering', 'turnId', 'type', 'variant',
   ]);
   assert.equal(turn.type, 'turn.start');
@@ -88,11 +88,57 @@ test('builds compact turn without full legal list', () => {
   assert.deepEqual(turn.recentMoves, []);
   assert.deepEqual(turn.steering, { mode: 'locked', guidance: null });
   assert.equal(turn.deadline, null);
+  assert.deepEqual(turn.material, {
+    white: { pawns: 8, knights: 2, bishops: 2, rooks: 2, queens: 1, points: 39 },
+    black: { pawns: 8, knights: 2, bishops: 2, rooks: 2, queens: 1, points: 39 },
+    balanceWhite: 0,
+    capturedByWhite: { pawns: 0, knights: 0, bishops: 0, rooks: 0, queens: 0 },
+    capturedByBlack: { pawns: 0, knights: 0, bishops: 0, rooks: 0, queens: 0 },
+  });
+  assert.equal(turn.balanceForAgent, 0);
   assert.equal('legalMoves' in turn, false);
   assert.equal('movesUci' in turn, false);
   assert.equal(turn.positionStatus.inCheck, false);
   assert.deepEqual(turn.positionStatus.movablePieces[0], { square: 'a2', piece: 'pawn' });
   assert.deepEqual(Object.keys(turn.positionStatus.movablePieces[0]), ['square', 'piece']);
+});
+
+test('reports authoritative material inventory and capture counts', () => {
+  const game = new AgentChessGame();
+  for (const move of ['e2e4', 'd7d5', 'e4d5']) game.applyMove(move);
+
+  assert.deepEqual(game.snapshot().material, {
+    white: { pawns: 8, knights: 2, bishops: 2, rooks: 2, queens: 1, points: 39 },
+    black: { pawns: 7, knights: 2, bishops: 2, rooks: 2, queens: 1, points: 38 },
+    balanceWhite: 1,
+    capturedByWhite: { pawns: 1, knights: 0, bishops: 0, rooks: 0, queens: 0 },
+    capturedByBlack: { pawns: 0, knights: 0, bishops: 0, rooks: 0, queens: 0 },
+  });
+
+  const turn = game.buildTurnSnapshot({
+    gameId: 'g', turnId: 't', agentColor: 'black',
+    steering: { mode: 'locked', guidance: null }, deadline: null,
+  });
+  assert.equal(turn.balanceForAgent, -1);
+  assert.equal('balanceForAgent' in game.snapshot().material, false);
+});
+
+test('material handles custom FEN, promotion, and en passant', () => {
+  const promoted = new AgentChessGame({ fen: '4k3/P7/8/8/8/8/8/4K3 w - - 0 1' });
+  promoted.applyMove('a7a8q');
+  assert.deepEqual(promoted.snapshot().material.white, {
+    pawns: 0, knights: 0, bishops: 0, rooks: 0, queens: 1, points: 9,
+  });
+
+  const enPassant = new AgentChessGame({ fen: '4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1' });
+  enPassant.applyMove('e5d6');
+  assert.deepEqual(enPassant.snapshot().material, {
+    white: { pawns: 1, knights: 0, bishops: 0, rooks: 0, queens: 0, points: 1 },
+    black: { pawns: 0, knights: 0, bishops: 0, rooks: 0, queens: 0, points: 0 },
+    balanceWhite: 1,
+    capturedByWhite: { pawns: 1, knights: 0, bishops: 0, rooks: 0, queens: 0 },
+    capturedByBlack: { pawns: 0, knights: 0, bishops: 0, rooks: 0, queens: 0 },
+  });
 });
 
 test('rejects a turn snapshot for a non-moving agent color', () => {
