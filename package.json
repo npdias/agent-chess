@@ -1,15 +1,29 @@
 {
-  "name": "agent-chess-mvp",
-  "version": "0.1.0",
+  "name": "agent-chess",
+  "version": "0.1.0-alpha",
+  "description": "Local chess matches for humans, engines, and external agents.",
   "license": "MIT",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/npdias/agent-chess.git"
+  },
+  "homepage": "https://github.com/npdias/agent-chess#readme",
+  "bugs": {
+    "url": "https://github.com/npdias/agent-chess/issues"
+  },
+  "engines": {
+    "node": "22.x",
+    "npm": ">=10"
+  },
   "overrides": {
     "@hono/node-server": "2.0.10"
   },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "doctor": "node bin/doctor.mjs",
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "check:docs": "node scripts/check-doc-style.mjs",
     "check:skills": "node scripts/validate-agent-skills.mjs",
@@ -18,7 +32,8 @@
     "smoke": "node bin/smoke-agent.js",
     "smoke:human": "node bin/smoke-human.js",
     "connect": "node bin/connect-agent.js",
-    "play": "node bin/connect-agent.js"
+    "play": "node bin/connect-agent.js",
+    "export:match": "node public/agent-play.js export"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

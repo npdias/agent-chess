@@ -32,6 +32,10 @@ Approved project terms include Agent Chess, FEN, PGN, UCI, WebSocket, MCP, Node.
 
 Define a new technical term at its first important use.
 
+Use **Agent Chess** as the project, product, service, and repository name.
+
+Do not use **Chess Bench** as a public name.
+
 ## Exceptions
 
 Keep legal text verbatim.

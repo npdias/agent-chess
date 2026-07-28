@@ -345,7 +345,7 @@ test('exports reproducibility metadata only for engine seats', async () => {
     const engineExport = await fetch(`${address.httpUrl}/api/matches/${engineMatch.matchId}/export`).then((response) => response.json());
     assert.deepEqual(engineExport.engine, {
       name: 'Stockfish 18 Lite', package: 'stockfish@18.0.8', profileId: 'stockfish-skill-7-movetime-90',
-      skillLevel: 7, movetimeMs: 90, hostBuild: 'agent-chess-mvp@0.1.0',
+      skillLevel: 7, movetimeMs: 90, hostBuild: 'agent-chess@0.1.0-alpha',
     });
 
     const practiceMatch = await createMatch(address, {
@@ -354,9 +354,9 @@ test('exports reproducibility metadata only for engine seats', async () => {
     });
     const practiceExport = await fetch(`${address.httpUrl}/api/matches/${practiceMatch.matchId}/export`).then((response) => response.json());
     assert.deepEqual(practiceExport.engine, {
-      name: 'Agent Chess Practice Bot', package: 'agent-chess-mvp@0.1.0',
+      name: 'Agent Chess Practice Bot', package: 'agent-chess@0.1.0-alpha',
       profileId: 'practice-estimated-500', targetElo: 500, strengthMode: 'practice',
-      movetimeMs: 90, hostBuild: 'agent-chess-mvp@0.1.0',
+      movetimeMs: 90, hostBuild: 'agent-chess@0.1.0-alpha',
     });
 
     const agentMatch = await createMatch(address, {
@@ -733,7 +733,7 @@ test('browser copied quoted --path command joins without printing its ticket', a
       method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
     }).then((response) => response.json());
     const command = `npm run --silent connect -- --server ${shellQuote(address.httpUrl)} --path ${shellQuote(ticket.wsPath)} --demo`;
-    const child = spawn('/bin/zsh', ['-f', '-c', command], {
+    const child = spawn('/bin/sh', ['-f', '-c', command], {
       cwd: new URL('..', import.meta.url),
     });
     let stdout = '';
@@ -741,11 +741,20 @@ test('browser copied quoted --path command joins without printing its ticket', a
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('connector did not join')), 3000);
-      const poll = () => {
-        if (stdout.includes('Accepted:')) { clearTimeout(timer); resolve(); }
-        else setTimeout(poll, 10);
+      let settled = false;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        callback(value);
       };
+      const timer = setTimeout(() => finish(reject, new Error('connector did not join')), 3000);
+      const poll = () => {
+        if (stdout.includes('Accepted:')) finish(resolve);
+        else if (child.exitCode !== null) finish(reject, new Error(`connector exited before join: ${child.exitCode}`));
+        else if (!settled) setTimeout(poll, 10);
+      };
+      child.once('error', (error) => finish(reject, error));
       poll();
     });
     await fetch(`${address.httpUrl}/api/matches/${created.matchId}/resign`, {

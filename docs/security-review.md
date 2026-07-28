@@ -18,6 +18,24 @@ The dependency audit found no known production vulnerabilities.
 
 Repository and history scans found no high-confidence credential patterns.
 
+## Release Hardening Delta
+
+Review date: 2026-07-28
+
+Baseline revision: `78019e26f5069e3a109e0731b00c5dac90e10263`
+
+Scan ID: `4cb1fc32-09c1-4198-bd3f-8e2cffd8b246`
+
+The diff review covered four changed production files.
+
+It found no reportable security issues.
+
+All four worklist files received full-file review receipts.
+
+The release check passed 299 tests.
+
+The production dependency audit found no known vulnerabilities.
+
 ## Release Decision
 
 The source repository is suitable for public sharing after this cleanup.
@@ -60,4 +78,6 @@ The baseline scan report records pre-cleanup source paths.
 
 Targeted regression tests validate completed controls.
 
-This document does not replace a second full security scan.
+The release hardening review covers only the changed production files.
+
+It does not replace a second full repository scan.

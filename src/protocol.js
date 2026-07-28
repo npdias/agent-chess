@@ -7,6 +7,7 @@ export const AGENT_REST_ACTIONS = Object.freeze([
   'POST /api/agent/decision',
   'POST /api/agent/move',
   'GET /api/agent/result',
+  'GET /api/agent/export',
 ]);
 
 export const MESSAGE_TYPES = Object.freeze({

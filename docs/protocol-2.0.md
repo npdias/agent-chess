@@ -61,3 +61,15 @@ Terminal messages contain result, status, termination, and PGN.
 Failed matches use stable failure codes.
 
 Repeat result reads without changing match state.
+
+## Match Export
+
+An authenticated REST agent can read `GET /api/agent/export`.
+
+A browser seat can read `GET /api/matches/{matchId}/export`.
+
+The export contains public match records.
+
+It does not contain capabilities, session tokens, trainer guidance, or private reasoning.
+
+Export the record before the terminal `result` command removes the local session or before the server restarts.

@@ -56,9 +56,27 @@ Follow its `nextAction` value.
 
 Do not create a new match for transport recovery.
 
+## Export a Match Record
+
+Run this command before the terminal `result` command or before the server restarts:
+
+```sh
+npm run --silent export:match -- --match MATCH_ID > match.json
+```
+
+The command uses the protected local session.
+
+The terminal `result` command removes this session after the match ends.
+
+The record contains config, PGN, positions, material, public activity, and available engine data.
+
+The record does not contain capabilities, session tokens, trainer guidance, private reasoning, or local process output.
+
 ## Finish
 
 Continue until the server returns `game.end`.
+
+Export the match record if you need the complete session record.
 
 Run the returned `result` command.
 

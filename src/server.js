@@ -41,7 +41,7 @@ const REST_SCHEMAS = Object.freeze({
   move: { turnId: 'string', moveUci: 'uci' },
 });
 const REST_ACTION_ORDER = Object.freeze([
-  'Claim invitation.', 'Read match or await turn.', 'List legal moves.', 'Publish sanitized decision.', 'Submit move.', 'Read result.',
+  'Claim invitation.', 'Read match or await turn.', 'List legal moves.', 'Publish sanitized decision.', 'Submit move.', 'Read result or export.',
 ]);
 const REST_RETRY = Object.freeze({ sameMove: 'idempotent', conflictingMove: 'CONFLICTING_REPLAY', staleTurn: 'STALE_TURN' });
 const MAX_MATCHES = 64;
@@ -134,6 +134,15 @@ function publicSnapshot(record) {
     agentSessionActive: record.durableAgentColors.size > 0,
     ...(record.evaluation ? { evaluation: record.evaluation } : {}),
     ...(record.hasEngine ? { engine } : {}),
+  };
+}
+
+function publicExport(record) {
+  return {
+    ...record.session.exportRecord(),
+    ...(record.hasEngine ? { engine: publicSnapshot(record).engine } : {}),
+    ...(record.evaluation ? { evaluation: record.evaluation } : {}),
+    protocolVersion: '2.0',
   };
 }
 
@@ -802,6 +811,18 @@ export function createAgentChessServer({
       return true;
     }
 
+    if (url.pathname === '/api/agent/export' && request.method === 'GET') {
+      try {
+        const access = restSession(request);
+        const record = matches.get(access.matchId);
+        if (!record) throw new Error('MATCH_NOT_FOUND');
+        sendJson(response, 200, publicExport(record));
+      } catch (error) {
+        sendJson(response, error.message === 'MATCH_NOT_FOUND' ? 404 : 401, { error: error.message });
+      }
+      return true;
+    }
+
     if (request.method === 'GET' && url.pathname === '/agent/join') {
       removeExpiredTickets();
       const ticket = url.searchParams.get('ticket');
@@ -829,12 +850,7 @@ export function createAgentChessServer({
       if (record.session.visibility === 'private' && !seatForToken(request, record, 'human') && !seatForToken(request, record, 'agent')) {
         return sendJson(response, 401, { error: 'UNAUTHORIZED' }), true;
       }
-      sendJson(response, 200, {
-        ...record.session.exportRecord(),
-        ...(record.hasEngine ? { engine: publicSnapshot(record).engine } : {}),
-        ...(record.evaluation ? { evaluation: record.evaluation } : {}),
-        protocolVersion: '2.0',
-      });
+      sendJson(response, 200, publicExport(record));
       return true;
     }
 
