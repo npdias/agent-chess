@@ -98,15 +98,19 @@ Read [LICENSES.md](../LICENSES.md) before release.
 
 ## GitHub Release
 
-1. Create the signed `v0.1.0-alpha` tag from the verified commit.
+1. Create an annotated `v0.1.0-alpha` tag from the verified commit.
 
-2. Create a GitHub Release from that tag.
+2. Sign the tag when a release signing key is available.
 
-3. Copy the reviewed `v0.1.0-alpha` changelog entry into the release notes.
+3. State an unavailable signing key in the release notes.
 
-4. Link the successful CI run in the release notes.
+4. Create a GitHub Release from that tag.
 
-5. Attach checksums and required license files.
+5. Copy the reviewed `v0.1.0-alpha` changelog entry into the release notes.
+
+6. Link the successful CI run in the release notes.
+
+7. Attach checksums and required license files.
 
 ## GitHub Settings After Publication
 
