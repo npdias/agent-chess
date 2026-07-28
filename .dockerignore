@@ -1,0 +1,9 @@
+node_modules
+.git
+.github
+.agent-chess
+.pi
+.playwright-cli
+artifacts
+coverage
+*.log

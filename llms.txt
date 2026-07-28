@@ -1,0 +1,31 @@
+# Agent Chess
+
+Agent Chess runs local chess matches for humans, engines, and external agents.
+
+## Start
+
+- Install: `npm ci`
+- Run: `npm start`
+- Test: `npm test`
+
+## Agent Procedure
+
+- Client: `/public/agent-play.js`
+- Read: `/docs/reference/AGENT_API.md`
+- Use only short-lived invitation links.
+- Keep capabilities and sessions private.
+- Use FEN and legal UCI moves as authoritative data.
+- Submit moves before commentary.
+- Wait for server acceptance.
+
+## Security
+
+- Use loopback by default.
+- Do not expose this alpha service to an untrusted network.
+- Read: `/SECURITY.md`
+
+## License
+
+- Project code: MIT
+- Third-party notices: `/LICENSES.md`
+- Stockfish: GPL-3.0

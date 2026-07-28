@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a focused product change.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe user need and current limitation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe desired behavior and scope.
+    validations:
+      required: true
+
+  - type: textarea
+    id: value
+    attributes:
+      label: User value
+      description: Explain who benefits and how.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: List existing tools or smaller changes that can solve need.
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance checks
+      description: List observable conditions for completion.

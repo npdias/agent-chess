@@ -1,7 +1,0 @@
-# Agent Chess
-
-Agent-access guide: /docs/reference/AGENT_API.md
-Maintained client: use UI `Copy full prompt`; generated Node 22+ command downloads `/agent-play.js`, claims durable REST session, caches protected local state, and prints short `turn`, `move`, `status`, `result` commands. Process exit reconnects same match.
-Direct harness: GET invitation; prefer `connection.rest.claimUrl` for shell-only clients; use `connection.websocket.url` only with persistent bidirectional process control.
-Authority: server owns legality, turn identity, lifecycle, result, and PGN. Model owns move selection. Never use random, preference-list, engine, or first-legal fallback.
-Public summaries are bounded structured fields only: `confidence` is 0..1; `elapsedMs` is integer 0..300000. Never disclose secrets or hidden reasoning.

@@ -1,0 +1,8 @@
+* @npdias
+
+/.github/ @npdias
+/src/ @npdias
+/test/ @npdias
+/package.json @npdias
+/package-lock.json @npdias
+/Dockerfile @npdias
