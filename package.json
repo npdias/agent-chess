@@ -36,7 +36,7 @@
     "export:match": "node public/agent-play.js export"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "chess.js": "1.4.0",
     "stockfish": "18.0.8",
     "ws": "8.21.1",
