@@ -4,7 +4,7 @@ const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
 if (packageJson.license !== 'MIT') throw new Error('PROJECT_LICENSE_MUST_BE_MIT');
 
 const licensePairs = [
-  ['node_modules/@modelcontextprotocol/sdk/LICENSE', 'third_party/licenses/modelcontextprotocol-sdk-1.29.0-MIT.txt'],
+  ['node_modules/@modelcontextprotocol/sdk/LICENSE', 'third_party/licenses/modelcontextprotocol-sdk-1.30.0-MIT.txt'],
   ['node_modules/chess.js/LICENSE', 'third_party/licenses/chess.js-1.4.0-BSD-2-Clause.txt'],
   ['node_modules/stockfish/Copying.txt', 'third_party/licenses/stockfish-18.0.8-GPL-3.0.txt'],
   ['node_modules/ws/LICENSE', 'third_party/licenses/ws-8.21.1-MIT.txt'],
