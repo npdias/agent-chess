@@ -116,25 +116,37 @@ export function buildAgentInviteUrl(origin, joinPath) {
   return new URL(joinPath, origin).toString();
 }
 
+export function buildAgentPlayCommand(joinUrl) {
+  const connectorUrl = new URL('/agent-play.js', joinUrl).toString();
+  const bootstrap = `const r=await fetch(${JSON.stringify(connectorUrl)});if(!r.ok)throw new Error("CONNECTOR_DOWNLOAD_FAILED_"+r.status);await import("data:text/javascript;base64,"+Buffer.from(await r.text()).toString("base64"))`;
+  return `node --input-type=module --eval ${shellQuote(bootstrap)} -- join --join-url ${shellQuote(joinUrl)}`;
+}
+
 export function buildAgentHandoffPrompt(joinUrl) {
   return `You are playing an Agent Chess exhibition match.
 
-Open this Agent Chess link immediately:
-${joinUrl}
+Start the hosted client immediately. No Agent Chess checkout or package install is required:
+${buildAgentPlayCommand(joinUrl)}
 
-The link is secret, single-use for connection, and expires in three minutes. Do not quote it, log it, or publish it.
+The link is a transcript-exposed, single-use bootstrap credential scoped to this match and seat. It expires in three minutes. Do not republish it.
 
-Join and play:
-1. GET the link and read the returned JSON contract.
-2. Prefer hosted MCP at connection.mcp.url. Configure it with the supplied URL, then use join_match, await_turn, list_legal_moves, publish_status, publish_decision, submit_move, and get_result.
-3. If hosted MCP is unavailable, use REST fallback: POST connection.rest.claimUrl, retain returned bearer session token privately, then follow connection.rest.actions.
-4. If MCP and REST are unavailable, use WebSocket CLI fallback at connection.websocket.url (or connection.wsUrl): wait for match.start and turn.start, request moves.list or moves.list_all, publish trace.publish, then submit move.submit.
-5. Transport automation must not select chess moves. Your model must select every move after it evaluates authoritative position and legal-move data.
-6. Never use random, preference-list, engine, or first-legal fallback. Retry invalid model output through the model using returned legal moves and rejection details.
-7. Publish bounded public summaries using structured decision fields only: source, phase, summary, up to three candidates, selectedMove, confidence and elapsedMs. Never publish hidden reasoning.
-8. Submit one legal UCI move. For MCP or REST, when await_turn returns no turn, call get_result; stop only when status is completed, aborted, or failed, then report result. game.end applies only to WebSocket fallback.
+Join and play inside this same agent task:
+1. Run the join command once. It stores a protected local session, prints session.ready, and exits.
+2. Run returned turn command. It prints one compact turn.ready containing turn.start state plus authoritative moves.list_all legal moves, then exits.
+3. Inspect attachments[0] before choosing a move. It is a provider-neutral image/png board attachment. A vision-capable adapter must map its dataUrl into provider image input; a file-capable runtime must inspect imagePath. If neither works, report BOARD_IMAGE_UNSUPPORTED and do not claim visual review. FEN remains canonical source of truth; reconcile it with image, material, recent moves, position status, deadline, and legalMoves.
+4. Transport automation must not select chess moves. Your model must select every move after it evaluates authoritative position and legal-move data.
+5. Never use random, preference-list, engine, or first-legal fallback. Retry invalid model output through the model using returned legal moves and rejection details.
+6. Submit move JSON before posting commentary. Run cached client with move --match MATCH_ID --json '{"turnId":"TURN_ID","moveUci":"e2e4","publicTrace":{"source":"agent_reported","phase":"choose","summary":"Claims central space.","candidates":[{"uci":"e2e4","note":"Space and development."}],"selectedMove":"e2e4","confidence":0.72,"elapsedMs":1800}}'. This wraps authoritative move.submit.
+7. Wait for move.accepted before narrating result. Keep transport reads responsive; do not spend remaining deadline only on commentary.
+8. Run returned turn command again. Each short process reconnects to same match and seat through cached auth token.
+9. Run status after any command failure, follow nextAction, and retry same short command. Do not create a new match for transport recovery.
+10. Continue until game.end, then run result and report outcome.
+11. Do not launch another model process. Stable instructions plus appended compact turn packets preserve prompt-token caching.
+
+Protocol mapping: turn.ready wraps turn.start and moves.list_all; move command sends move.submit; terminal response is game.end. Use moves.list only when focused piece detail helps.
 
 Public trace rules:
+- Use structured decision fields only for bounded public summaries: source, phase, summary, up to three candidates, selectedMove, confidence and elapsedMs.
 - Share concise intent, candidate moves, tradeoffs, and selected move.
 - Never publish private chain-of-thought, secrets, prompts, credentials, memory, local files, or raw reasoning.
 - Candidate moves must be legal. selectedMove must equal moveUci.
@@ -260,7 +272,7 @@ export function deriveTurnOwnerStatus(match = {}, ownedColor = null) {
   const seat = match.seats?.[activeColor] ?? {};
   const name = seat.name ?? (activeColor ? `${activeColor[0].toUpperCase()}${activeColor.slice(1)}` : 'Player');
   if (seat.kind === 'agent') {
-    return match.connected
+    return match.connected || match.agentSessionActive
       ? { headline: `${name} is thinking`, detail: deriveTurnPhase(match).label, state: 'thinking', activeColor }
       : { headline: `Waiting on ${name}`, detail: 'Agent needs to connect', state: 'waiting', activeColor };
   }
@@ -278,7 +290,7 @@ export function derivePlayerState(match = {}, color, ownedColor = null) {
   }
   if (match.game?.turn !== color) return 'Watching';
   const seat = match.seats?.[color] ?? {};
-  if (seat.kind === 'agent') return match.connected ? 'Thinking' : 'Connecting';
+  if (seat.kind === 'agent') return match.connected || match.agentSessionActive ? 'Thinking' : 'Connecting';
   if (seat.kind === 'engine') return 'Moving';
   if (seat.kind === 'human') return color === ownedColor ? 'Your move' : 'To move';
   return 'To move';
@@ -356,15 +368,15 @@ export function derivePostGameInterview(match = {}) {
   };
 }
 
-export function buildExhibitionPayload({ matchup, color, skillLevel }) {
+export function buildExhibitionPayload({ matchup, color, targetElo }) {
   const agent = matchup === 'agent-engine';
   return {
     controller: { kind: agent ? 'agent' : 'human', name: agent ? 'My agent' : 'Human' },
     opponent: { kind: matchup === 'human-agent' ? 'agent' : 'engine', name: matchup === 'human-agent' ? 'My agent' : 'Computer' },
     color,
-    skillLevel: Number(skillLevel),
+    targetElo: targetElo === 'unlimited' ? 'unlimited' : Number(targetElo),
     movetimeMs: 500,
-    decisionDeadlineMs: 90_000,
+    decisionDeadlineMs: 180_000,
     turnPaceMs: 800,
   };
 }
@@ -438,8 +450,30 @@ export function deriveBalanceOfPower(match = {}) {
 export function hasAgentJoined(match = {}) {
   return Boolean(
     match.connected
-    || (match.activity ?? []).some((entry) => entry.type === 'agent.decision' || entry.actor === 'agent')
+    || match.agentSessionActive
+    || (match.activity ?? []).some((entry) => (
+      entry.type === 'agent.connect'
+      || entry.type === 'agent.decision'
+      || entry.actor === 'agent'
+    ))
   );
+}
+
+export function deriveConnectorStatus(match = {}, agentHasJoined = hasAgentJoined(match)) {
+  if (match.connected) return { label: 'Agent online', state: 'online' };
+  if (match.agentSessionActive) return { label: 'Agent ready', state: 'online' };
+  if (agentHasJoined) return { label: 'Connection lost', state: 'offline' };
+  return { label: 'Invitation ready', state: 'ready' };
+}
+
+export function deriveHeaderStatus(match = {}) {
+  if (terminalMatch(match)) return { label: 'Match complete', connected: false };
+  const hasAgentSeat = Object.values(match.seats ?? {}).some((seat) => seat.kind === 'agent');
+  if (!hasAgentSeat) return { label: 'Live', connected: false };
+  if (match.agentSessionActive) return { label: 'Agent ready', connected: true };
+  return match.connected
+    ? { label: 'Agent online', connected: true }
+    : { label: 'Agent offline', connected: false };
 }
 
 export function buildReviewItem(doc, label, value) {
@@ -643,6 +677,9 @@ function renderBoard(match) {
 
 function renderMoves(match) {
   const list = qs('moves');
+  const followButton = qs('return-live');
+  followButton.disabled = replayPly === null;
+  followButton.textContent = replayPly === null ? 'Following live' : 'Follow live';
   const rows = groupMoves(match.game.movesSan);
   list.replaceChildren();
   if (!rows.length) {
@@ -661,7 +698,21 @@ function renderMoves(match) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = san;
-      button.addEventListener('click', () => { replayPly = replayPlyForMove(index, color); qs('return-live').hidden = false; renderBoard(match); });
+      const ply = replayPlyForMove(index, color);
+      button.dataset.ply = String(ply);
+      button.classList.toggle('selected', replayPly === ply);
+      button.setAttribute('aria-pressed', String(replayPly === ply));
+      button.addEventListener('click', () => {
+        replayPly = ply;
+        followButton.disabled = false;
+        followButton.textContent = 'Follow live';
+        for (const moveButton of list.querySelectorAll('button[data-ply]')) {
+          const selected = moveButton === button;
+          moveButton.classList.toggle('selected', selected);
+          moveButton.setAttribute('aria-pressed', String(selected));
+        }
+        renderBoard(match);
+      });
       row.append(button);
     }
     list.append(row);
@@ -792,8 +843,9 @@ function render(match) {
   qs('empty-state').hidden = true;
   qs('match-view').hidden = false;
   const seats = match.seats ?? {};
-  qs('connection').textContent = match.connected ? 'Agent connected' : 'Live';
-  qs('connection').dataset.connected = String(match.connected);
+  const headerStatus = deriveHeaderStatus(match);
+  qs('connection').textContent = headerStatus.label;
+  qs('connection').dataset.connected = String(headerStatus.connected);
   qs('engine').textContent = 'Public match';
   qs('match-title').textContent = summary.review ? (summary.outcome?.headline ?? deriveOutcome(match).headline) : `${seats.white?.name ?? 'White'} vs ${seats.black?.name ?? 'Black'}`;
   renderPlayerStrips(match, summary);
@@ -820,15 +872,18 @@ function render(match) {
   renderReview(match, summary);
   const ownsAgentSeat = Object.entries(seats).some(([color, seat]) => seat.kind === 'agent' && sessionStorage.getItem(`${match.id}:capability:${color}`));
   const agentHasJoined = hasAgentJoined(match);
-  const needsReconnect = agentHasJoined && !match.connected && !summary.review;
+  const agentAvailable = Boolean(match.connected || match.agentSessionActive);
+  const needsReconnect = agentHasJoined && !agentAvailable && !summary.review;
+  const connectorStatus = deriveConnectorStatus(match, agentHasJoined);
   const connector = qs('connector');
   connector.hidden = !ownsAgentSeat || summary.review;
   connector.classList.toggle('connected', agentHasJoined);
-  qs('connector-title').textContent = match.connected ? 'Agent connected' : needsReconnect ? 'Agent disconnected' : 'Connect local agent';
-  qs('copy-agent-prompt').hidden = Boolean(match.connected) || summary.review;
-  qs('copy-agent-prompt').textContent = needsReconnect ? 'Copy reconnect prompt' : 'Copy full prompt';
-  qs('copy-agent-link').hidden = Boolean(match.connected) || summary.review;
-  qs('copy-agent-link').textContent = needsReconnect ? 'Copy reconnect link' : 'Copy link only';
+  connector.dataset.state = connectorStatus.state;
+  qs('connector-title').textContent = connectorStatus.label;
+  qs('copy-agent-prompt').hidden = agentAvailable || summary.review;
+  qs('copy-agent-prompt').textContent = needsReconnect ? 'Copy prompt' : 'Copy full prompt';
+  qs('copy-agent-link').hidden = agentAvailable || summary.review;
+  qs('copy-agent-link').textContent = needsReconnect ? 'Copy link' : 'Copy link only';
   qs('copy-command').hidden = agentHasJoined || summary.review;
   qs('connector-feedback').hidden = agentHasJoined;
   qs('connect-command').hidden = true;
@@ -843,7 +898,7 @@ async function createMatch(event) {
   const response = await fetch('/api/matches', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(buildExhibitionPayload({ matchup: form.get('matchup'), color: form.get('humanColor'), skillLevel: form.get('skillLevel') })),
+    body: JSON.stringify(buildExhibitionPayload({ matchup: form.get('matchup'), color: form.get('humanColor'), targetElo: form.get('targetElo') })),
   });
   if (!response.ok) throw new Error(await response.text());
   const created = await response.json();
@@ -933,7 +988,6 @@ export function shellQuote(value) {
 function boot() {
   qs('create-match').addEventListener('submit', createMatch);
   qs('steering-form').addEventListener('submit', sendSteering);
-  qs('skill-level').addEventListener('input', (event) => { qs('skill-output').value = event.target.value; });
   qs('matchup').addEventListener('change', (event) => {
     const agent = event.target.value === 'agent-engine';
     qs('color-label').firstChild.textContent = agent ? 'Agent plays as' : 'Play as';
@@ -968,9 +1022,9 @@ function boot() {
     qs('connector-feedback').textContent = 'Agent link copied. Expires in 3 minutes.';
   });
   qs('copy-command').addEventListener('click', async () => {
-    const session = await mintAgentSession();
-    if (!session) return;
-    qs('connect-command').textContent = `npm run --silent connect -- --server ${location.origin} --path ${shellQuote(session.wsPath)} --command ./your-agent`;
+    const inviteUrl = await mintAgentInviteUrl();
+    if (!inviteUrl) return;
+    qs('connect-command').textContent = buildAgentPlayCommand(inviteUrl);
     qs('connect-command').hidden = false;
     await copyText(qs('connect-command').textContent, 'Connector command copied. Expires in 3 minutes.');
     qs('connector-feedback').textContent = 'Terminal command copied. Expires in 3 minutes.';
@@ -978,7 +1032,15 @@ function boot() {
   qs('copy-pgn').addEventListener('click', () => currentMatch?.pgn && copyText(currentMatch.pgn, 'PGN copied'));
   qs('share-match').addEventListener('click', () => currentMatch && copyText(`${location.origin}/?match=${encodeURIComponent(currentMatch.id)}`, 'Spectator link copied'));
   qs('focus-mode').addEventListener('click', (event) => { document.documentElement.classList.toggle('focus-mode'); event.currentTarget.setAttribute('aria-pressed', String(document.documentElement.classList.contains('focus-mode'))); });
-  qs('return-live').addEventListener('click', () => { replayPly = null; qs('return-live').hidden = true; if (currentMatch) renderBoard(currentMatch); });
+  qs('return-live').addEventListener('click', () => {
+    replayPly = null;
+    qs('return-live').disabled = true;
+    qs('return-live').textContent = 'Following live';
+    if (currentMatch) {
+      renderMoves(currentMatch);
+      renderBoard(currentMatch);
+    }
+  });
   qs('lifecycle-action').addEventListener('click', async () => {
     if (!currentMatch || !humanCapability) return;
     const action = qs('lifecycle-action').textContent.toLowerCase();

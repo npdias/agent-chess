@@ -12,7 +12,8 @@
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "smoke": "node bin/smoke-agent.js",
     "smoke:human": "node bin/smoke-human.js",
-    "connect": "node bin/connect-agent.js"
+    "connect": "node bin/connect-agent.js",
+    "play": "node bin/connect-agent.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

@@ -62,6 +62,29 @@ test('normalizes generic agent versus engine shorthand as a public exhibition', 
   assert.equal(config.engine.skillLevel, 12);
 });
 
+test('preserves estimated Elo practice targets below Stockfish floor', () => {
+  const config = normalizeMatchConfig({
+    controller: { kind: 'agent', name: 'My agent' },
+    opponent: { kind: 'engine', name: 'Computer' },
+    color: 'white',
+    targetElo: 500,
+  });
+
+  assert.equal(config.engine.targetElo, 500);
+  assert.equal(config.engine.skillLevel, 5);
+});
+
+test('accepts unlimited engine strength target', () => {
+  const config = normalizeMatchConfig({
+    controller: { kind: 'human', name: 'Human' },
+    opponent: { kind: 'engine', name: 'Computer' },
+    color: 'white',
+    targetElo: 'unlimited',
+  });
+
+  assert.equal(config.engine.targetElo, 'unlimited');
+});
+
 test('finds active seat for game turn', () => {
   const seats = { white: { kind: 'human' }, black: { kind: 'engine' } };
   assert.deepEqual(activeSeatFor('w', seats), { kind: 'human', color: 'white' });

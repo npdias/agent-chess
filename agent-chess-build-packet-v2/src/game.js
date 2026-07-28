@@ -1,5 +1,6 @@
 import { Chess } from 'chess.js';
 import { MESSAGE_TYPES, PROTOCOL_VERSION } from './protocol.js';
+import { renderBoardImage } from './board-image.js';
 
 const PIECE_NAMES = Object.freeze({
   p: 'pawn',
@@ -130,6 +131,7 @@ export class AgentChessGame {
     if (agentColor !== sideToMove) throw new Error('NOT_AGENT_TURN');
 
     const material = this.material();
+    const fen = this.chess.fen({ forceEnpassantSquare: true });
     return {
       type: MESSAGE_TYPES.TURN_START,
       protocolVersion: PROTOCOL_VERSION,
@@ -138,7 +140,8 @@ export class AgentChessGame {
       variant: 'standard',
       agentColor,
       sideToMove,
-      fen: this.chess.fen({ forceEnpassantSquare: true }),
+      fen,
+      boardImage: renderBoardImage(fen),
       ply: this.movesUci.length,
       material,
       balanceForAgent: agentColor === 'white' ? material.balanceWhite : -material.balanceWhite,

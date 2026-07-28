@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import packageJson from '../package.json' with { type: 'json' };
 import { WebSocketServer, WebSocket } from 'ws';
 import { MatchSession } from './match.js';
-import { StockfishEngine } from './stockfish.js';
+import { StockfishEngine, strengthProfileForTarget } from './stockfish.js';
 import { createAgentAccessService } from './agent-access.js';
 import { createAgentChessMcpServer } from './mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -83,6 +83,34 @@ export function normalizeTurnPaceMs(session, requestedMs) {
 
 function publicSnapshot(record) {
   const turn = record.session.activeTurn();
+  const strength = strengthProfileForTarget(record.targetElo);
+  const hostBuild = process.env.AGENT_CHESS_BUILD_ID ?? `${packageJson.name}@${packageJson.version}`;
+  const engine = strength?.mode === 'practice' ? {
+    name: 'Agent Chess Practice Bot',
+    package: `${packageJson.name}@${packageJson.version}`,
+    profileId: `practice-estimated-${strength.targetElo}`,
+    targetElo: strength.targetElo,
+    strengthMode: strength.mode,
+    movetimeMs: record.movetimeMs,
+    hostBuild,
+  } : strength ? {
+    name: 'Stockfish 18 Lite',
+    package: `stockfish@${packageJson.dependencies.stockfish}`,
+    profileId: strength.mode === 'unlimited'
+      ? `stockfish-unlimited-movetime-${record.movetimeMs}`
+      : `stockfish-uci-elo-${strength.uciElo}-movetime-${record.movetimeMs}`,
+    targetElo: record.targetElo,
+    strengthMode: strength.mode,
+    movetimeMs: record.movetimeMs,
+    hostBuild,
+  } : {
+    name: 'Stockfish 18 Lite',
+    package: `stockfish@${packageJson.dependencies.stockfish}`,
+    profileId: `stockfish-skill-${record.skillLevel}-movetime-${record.movetimeMs}`,
+    skillLevel: record.skillLevel,
+    movetimeMs: record.movetimeMs,
+    hostBuild,
+  };
   return {
     ...record.session.snapshot(),
     activeTurn: turn && {
@@ -101,15 +129,9 @@ function publicSnapshot(record) {
       mode: turn.mode,
     },
     connected: [...record.agentSockets.values()].some((socket) => socket?.readyState === WebSocket.OPEN),
+    agentSessionActive: record.durableAgentColors.size > 0,
     ...(record.evaluation ? { evaluation: record.evaluation } : {}),
-    ...(record.hasEngine ? { engine: {
-      name: 'Stockfish 18 Lite',
-      package: `stockfish@${packageJson.dependencies.stockfish}`,
-      profileId: `stockfish-skill-${record.skillLevel}-movetime-${record.movetimeMs}`,
-      skillLevel: record.skillLevel,
-      movetimeMs: record.movetimeMs,
-      hostBuild: process.env.AGENT_CHESS_BUILD_ID ?? `${packageJson.name}@${packageJson.version}`,
-    } } : {}),
+    ...(record.hasEngine ? { engine } : {}),
   };
 }
 
@@ -126,13 +148,21 @@ function contentType(path) {
 export function createAgentChessServer({
   stockfishFactory = (options) => StockfishEngine.start(options),
   publicDir = PUBLIC_DIR,
+  readStaticFile = readFile,
+  onStaticReadFailure = (details) => console.warn('STATIC_ASSET_READ_RETRY', details),
   ticketNow = () => Date.now(),
   waitForTurnTransition = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 } = {}) {
   const matches = new Map();
   const seatByToken = new Map();
   const seatByTicket = new Map();
-  const agentAccess = createAgentAccessService({ now: ticketNow });
+  const agentAccess = createAgentAccessService({
+    now: ticketNow,
+    onTurnDelivered: ({ matchId, turn }) => {
+      const record = matches.get(matchId);
+      if (record) armDecisionDeadline(record, turn);
+    },
+  });
   const mcpSessions = new Map();
   const terminalDelivered = new WeakSet();
   const agentWss = new WebSocketServer({ noServer: true });
@@ -235,6 +265,7 @@ export function createAgentChessServer({
 
   function invitationContract(request, binding, ticket) {
     const protocol = request.socket.encrypted ? 'wss:' : 'ws:';
+    const httpProtocol = request.socket.encrypted ? 'https:' : 'http:';
     const host = request.headers.host ?? 'localhost';
     return {
       service: { name: 'Agent Chess', version: packageJson.version },
@@ -246,9 +277,9 @@ export function createAgentChessServer({
         expiresAt: new Date(binding.expiresAt).toISOString(),
       },
       connection: {
-        wsUrl: `${protocol}//${host}/agent?ticket=${encodeURIComponent(ticket)}`,
-        rest: { claimUrl: `${request.socket.encrypted ? 'https:' : 'http:'}//${host}/api/agent/claim?ticket=${encodeURIComponent(ticket)}`, actions: AGENT_REST_ACTIONS, schemas: REST_SCHEMAS },
-        mcp: { url: `${request.socket.encrypted ? 'https:' : 'http:'}//${host}/mcp?ticket=${encodeURIComponent(ticket)}` },
+        rest: {
+          claimUrl: `${httpProtocol}//${host}/api/agent/claim?ticket=${encodeURIComponent(ticket)}`,
+        },
         websocket: { url: `${protocol}//${host}/agent?ticket=${encodeURIComponent(ticket)}` },
       },
       instructions: {
@@ -256,8 +287,6 @@ export function createAgentChessServer({
           'Open WebSocket.', 'Wait for match.start and turn.start.', 'Optionally request probes.',
           'Publish only sanitized status.', 'Submit legal UCI plus bounded publicTrace.', 'Handle accepted, rejected, and end.',
         ],
-        restActionOrder: REST_ACTION_ORDER,
-        retry: REST_RETRY,
       },
       messageFlow: {
         receive: ['match.start', 'turn.start', 'move.accepted', 'move.rejected', 'game.end'],
@@ -432,8 +461,11 @@ export function createAgentChessServer({
     }
     if (seat.kind === 'agent') {
       const turn = record.session.createTurnPayload();
-      armDecisionDeadline(record, turn);
-      safeSend(record.agentSockets.get(seat.color), turn);
+      const socket = record.agentSockets.get(seat.color);
+      if (socket?.readyState === WebSocket.OPEN) {
+        armDecisionDeadline(record, turn);
+        safeSend(socket, turn);
+      }
       broadcastState(record);
       return;
     }
@@ -476,8 +508,12 @@ export function createAgentChessServer({
     const oldSocket = record.agentSockets.get(color);
     if (oldSocket?.readyState === WebSocket.OPEN) oldSocket.close(4001, 'seat replaced');
     record.agentSockets.set(color, socket);
+    record.session.recordConnectorState('connected');
     socket.on('close', () => {
-      if (record.agentSockets.get(color) === socket) record.agentSockets.delete(color);
+      if (record.agentSockets.get(color) === socket) {
+        record.agentSockets.delete(color);
+        record.session.recordConnectorState('disconnected');
+      }
       broadcastState(record);
     });
     socket.on('message', async (raw) => {
@@ -591,6 +627,7 @@ export function createAgentChessServer({
       const engineConfig = {
         movetimeMs: session.engine.movetimeMs,
         skillLevel: session.engine.skillLevel,
+        targetElo: session.engine.targetElo,
       };
       const hasEngine = Object.values(session.seats).some((seat) => seat.kind === 'engine');
       let engine = null;
@@ -608,9 +645,11 @@ export function createAgentChessServer({
         hasEngine,
         engineConfig,
         skillLevel: engineConfig.skillLevel,
+        targetElo: engineConfig.targetElo,
         movetimeMs: engineConfig.movetimeMs,
         legacy,
         agentSockets: new Map(),
+        durableAgentColors: new Set(),
         observers: new Set(),
         advancing: false,
         engineFailed: false,
@@ -680,6 +719,11 @@ export function createAgentChessServer({
       try {
         const claimed = agentAccess.claimInvitation(url.searchParams.get('ticket'));
         seatByTicket.delete(url.searchParams.get('ticket'));
+        const record = matches.get(claimed.matchId);
+        if (record) {
+          record.durableAgentColors.add(claimed.color);
+          broadcastState(record);
+        }
         sendJson(response, 201, claimed, { 'cache-control': 'no-store' });
       } catch (error) {
         sendJson(response, error.message === 'INVITATION_EXPIRED' ? 410 : 409, { error: error.message });
@@ -856,8 +900,18 @@ export function createAgentChessServer({
     const path = join(publicDir, relative);
     if (!path.startsWith(publicDir)) return false;
     try {
-      const body = await readFile(path);
-      response.writeHead(200, { 'content-type': contentType(path), 'content-length': body.length });
+      let body;
+      try {
+        body = await readStaticFile(path);
+      } catch (firstError) {
+        onStaticReadFailure({ path: pathname, code: firstError?.code ?? 'UNKNOWN' });
+        body = await readStaticFile(path);
+      }
+      response.writeHead(200, {
+        'content-type': contentType(path),
+        'content-length': body.length,
+        ...(pathname === '/agent-play.js' ? { 'cache-control': 'no-store' } : {}),
+      });
       response.end(body);
       return true;
     } catch {

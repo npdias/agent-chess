@@ -56,6 +56,15 @@ test('keeps claimed session authenticated through terminal read and replays same
   assert.equal(service.getResult(sessionToken).status, 'completed');
 });
 
+test('keeps stable failure code in authenticated terminal result', () => {
+  const service = createAgentAccessService({ tokenFactory: () => 'token' });
+  const match = agentMatch();
+  const invitation = service.registerInvitation({ session: match, color: 'white' });
+  const { sessionToken } = service.claimInvitation(invitation.claimToken);
+  match.fail('AGENT_FAILURE', 'Decision deadline exceeded');
+  assert.equal(service.getResult(sessionToken).failureCode, 'AGENT_FAILURE');
+});
+
 test('bounds long-poll requests and returns timeout without exposing a turn', async () => {
   const service = createAgentAccessService({ tokenFactory: () => 'token' });
   const match = agentMatch();
@@ -64,4 +73,19 @@ test('bounds long-poll requests and returns timeout without exposing a turn', as
   const turn = service.joinMatch(sessionToken).turn;
   await assert.rejects(service.awaitTurn(sessionToken, { after: turn.turnId, waitMs: 25_001 }), /INVALID_WAIT_MS/);
   assert.deepEqual(await service.awaitTurn(sessionToken, { after: turn.turnId, waitMs: 0 }), { turn: null, timeout: true });
+});
+
+test('reports a turn delivery only when a transport receives an active turn', async () => {
+  const deliveries = [];
+  const service = createAgentAccessService({
+    tokenFactory: () => 'token',
+    onTurnDelivered: (delivery) => deliveries.push(delivery),
+  });
+  const match = agentMatch();
+  const invitation = service.registerInvitation({ session: match, color: 'white' });
+  const { sessionToken } = service.claimInvitation(invitation.claimToken);
+  const joined = service.joinMatch(sessionToken);
+  assert.deepEqual(deliveries, [{ matchId: match.id, color: 'white', turn: joined.turn }]);
+  await service.awaitTurn(sessionToken, { after: joined.turn.turnId, waitMs: 0 });
+  assert.equal(deliveries.length, 1);
 });

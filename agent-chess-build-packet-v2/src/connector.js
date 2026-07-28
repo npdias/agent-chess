@@ -4,6 +4,45 @@ const SQUARE_PATTERN = /^[a-h][1-8]$/;
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 const TRACE_SOURCES = new Set(['agent_reported', 'provider_summary', 'adapter_generated']);
 
+export async function resolveJoinTarget(fetchImpl, joinUrl) {
+  let invitation;
+  try {
+    invitation = new URL(joinUrl);
+  } catch {
+    throw new Error('INVALID_INVITATION_URL');
+  }
+  if (!['http:', 'https:'].includes(invitation.protocol)) throw new Error('INVALID_INVITATION_URL');
+
+  const response = await fetchImpl(invitation);
+  if (!response.ok) {
+    if (response.status === 410) throw new Error('INVITATION_EXPIRED');
+    if (response.status === 409) throw new Error('INVITATION_ALREADY_CLAIMED');
+    throw new Error(`INVITATION_REQUEST_FAILED_${response.status}`);
+  }
+
+  let contract;
+  try {
+    contract = await response.json();
+  } catch {
+    throw new Error('INVALID_INVITATION_CONTRACT');
+  }
+  const target = contract?.connection?.websocket?.url ?? contract?.connection?.wsUrl;
+  let socketUrl;
+  try {
+    socketUrl = new URL(target);
+  } catch {
+    throw new Error('INVALID_INVITATION_CONTRACT');
+  }
+  if (
+    contract?.service?.name !== 'Agent Chess'
+    || contract?.protocolVersion !== '2.0'
+    || !['ws:', 'wss:'].includes(socketUrl.protocol)
+  ) {
+    throw new Error('INVALID_INVITATION_CONTRACT');
+  }
+  return socketUrl.toString();
+}
+
 export async function exchangeAgentSession(fetchImpl, server, capability) {
   const response = await fetchImpl(new URL('/api/agent-sessions', server), {
     method: 'POST', headers: { authorization: `Bearer ${capability}` },

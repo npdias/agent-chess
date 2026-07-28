@@ -506,3 +506,19 @@ test('strips decision details from precommit trace publication', () => {
   assert.deepEqual(entry.candidates, []);
   assert.equal(entry.selectedMove, null);
 });
+
+test('records public connector lifecycle without credentials or transport details', () => {
+  const match = publicAgentMatch();
+  const connected = match.recordConnectorState('connected');
+  const disconnected = match.recordConnectorState('disconnected');
+
+  assert.deepEqual(
+    [connected, disconnected].map(({ type, source, actor, summary }) => ({ type, source, actor, summary })),
+    [
+      { type: 'agent.connect', source: 'system', actor: 'connector', summary: 'Agent connected' },
+      { type: 'agent.disconnect', source: 'system', actor: 'connector', summary: 'Agent disconnected' },
+    ]
+  );
+  assert.equal(JSON.stringify(match.snapshot().activity).includes('ticket'), false);
+  assert.equal(JSON.stringify(match.snapshot().activity).includes('socket'), false);
+});

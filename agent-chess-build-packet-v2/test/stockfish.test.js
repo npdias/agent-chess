@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Chess } from 'chess.js';
-import { StockfishEngine } from '../src/stockfish.js';
+import {
+  selectPracticeMove,
+  StockfishEngine,
+  strengthProfileForTarget,
+} from '../src/stockfish.js';
 import * as stockfishModule from '../src/stockfish.js';
 
 const parseUciScore = stockfishModule.parseUciScore ?? (() => null);
@@ -17,6 +21,28 @@ test('normalizes UCI score to White perspective', () => {
     type: 'mate', value: 3, perspective: 'white',
   });
   assert.equal(parseUciScore('bestmove e2e4', '8/8/8/8/8/8/8/8 w - - 0 1'), null);
+});
+
+test('uses a true beginner selector below Stockfish UCI Elo floor', () => {
+  assert.deepEqual(strengthProfileForTarget(250), {
+    mode: 'practice',
+    targetElo: 250,
+  });
+  assert.deepEqual(strengthProfileForTarget(1500), {
+    mode: 'uci-elo',
+    targetElo: 1500,
+    uciElo: 1500,
+  });
+  assert.deepEqual(strengthProfileForTarget('unlimited'), {
+    mode: 'unlimited',
+    targetElo: null,
+  });
+});
+
+test('250 practice bot can choose across every legal move', () => {
+  const chess = new Chess();
+  const legal = chess.moves({ verbose: true }).map((move) => move.lan);
+  assert.equal(selectPracticeMove(chess.fen(), 250, () => 0.999), legal.at(-1));
 });
 
 test('returns a legal best move for a FEN position', { timeout: 20_000 }, async () => {

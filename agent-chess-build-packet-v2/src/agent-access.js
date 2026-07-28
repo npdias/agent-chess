@@ -13,7 +13,12 @@ function activeTurnFor(binding) {
   return turn?.activeColor === binding.color && turn.seatKind === 'agent' ? turn : null;
 }
 
-export function createAgentAccessService({ now = () => Date.now(), tokenFactory = opaqueToken, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
+export function createAgentAccessService({
+  now = () => Date.now(),
+  tokenFactory = opaqueToken,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  onTurnDelivered = () => undefined,
+} = {}) {
   const invitations = new Map();
   const sessions = new Map();
 
@@ -27,6 +32,12 @@ export function createAgentAccessService({ now = () => Date.now(), tokenFactory 
     const binding = sessions.get(sessionToken);
     if (!binding || binding.closed) throw new Error('UNAUTHORIZED');
     return binding;
+  }
+
+  function deliveredTurn(binding) {
+    const turn = activeTurnFor(binding);
+    if (turn) onTurnDelivered({ matchId: binding.session.id, color: binding.color, turn });
+    return turn;
   }
 
   return {
@@ -70,7 +81,7 @@ export function createAgentAccessService({ now = () => Date.now(), tokenFactory 
       if (!binding.session.activeTurn() && !binding.session.isTerminal() && binding.session.activeSeat().color === binding.color) {
         binding.session.createTurnPayload();
       }
-      return { matchId: binding.session.id, color: binding.color, turn: activeTurnFor(binding), terminal: binding.session.isTerminal() };
+      return { matchId: binding.session.id, color: binding.color, turn: deliveredTurn(binding), terminal: binding.session.isTerminal() };
     },
 
     async awaitTurn(sessionToken, { after = null, waitMs = 0 } = {}) {
@@ -79,7 +90,10 @@ export function createAgentAccessService({ now = () => Date.now(), tokenFactory 
       const deadline = now() + waitMs;
       do {
         const turn = activeTurnFor(binding);
-        if (turn && turn.turnId !== after) return { turn, timeout: false };
+        if (turn && turn.turnId !== after) {
+          onTurnDelivered({ matchId: binding.session.id, color: binding.color, turn });
+          return { turn, timeout: false };
+        }
         if (binding.session.isTerminal() || now() >= deadline) return { turn: null, timeout: true };
         await sleep(Math.min(25, deadline - now()));
       } while (true);
@@ -127,7 +141,13 @@ export function createAgentAccessService({ now = () => Date.now(), tokenFactory 
     getResult(sessionToken) {
       const binding = bindingFor(sessionToken);
       const snapshot = binding.session.snapshot();
-      return { status: snapshot.status, termination: snapshot.termination, result: snapshot.game.result, pgn: snapshot.pgn };
+      return {
+        status: snapshot.status,
+        termination: snapshot.termination,
+        result: snapshot.game.result,
+        pgn: snapshot.pgn,
+        ...(snapshot.status === 'failed' ? { failureCode: snapshot.failureCode } : {}),
+      };
     },
 
     closeSession(sessionToken) {

@@ -130,8 +130,11 @@ test('REST White and MCP Black survive multiple turns without leaking invitation
     const terminalMatch = await createMatch(address, 'white', { decisionDeadlineMs: 10 });
     const terminalInvite = await mintInvite(address, terminalMatch.capabilities.white);
     const { sessionToken: terminalToken } = await fetch(terminalInvite.connection.rest.claimUrl, { method: 'POST' }).then((response) => response.json());
+    const terminalAuth = { authorization: `Bearer ${terminalToken}` };
+    const delivered = await fetch(`${address.httpUrl}/api/agent/match`, { headers: terminalAuth }).then((response) => response.json());
+    assert.ok(delivered.turn);
     await new Promise((resolve) => setTimeout(resolve, 50));
-    const terminal = await fetch(`${address.httpUrl}/api/agent/result`, { headers: { authorization: `Bearer ${terminalToken}` } }).then((response) => response.json());
+    const terminal = await fetch(`${address.httpUrl}/api/agent/result`, { headers: terminalAuth }).then((response) => response.json());
     assert.equal(terminal.status, 'failed');
   } finally {
     await mcpTransport?.terminateSession().catch(() => undefined);

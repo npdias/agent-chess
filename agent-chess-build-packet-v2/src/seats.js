@@ -1,4 +1,12 @@
 const KINDS = new Set(['human', 'agent', 'engine']);
+const TARGET_ELOS = new Set([250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2250, 2500, 2750, 3000, 3200]);
+
+function normalizeTargetElo(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (value === 'unlimited') return 'unlimited';
+  const numeric = Number(value);
+  return TARGET_ELOS.has(numeric) ? numeric : 500;
+}
 
 function cleanSeat(seat, fallbackName) {
   if (!seat || !KINDS.has(seat.kind)) throw new Error('INVALID_SEAT');
@@ -79,6 +87,7 @@ export function normalizeMatchConfig(body = {}, { random = Math.random } = {}) {
     engine: {
       provider: 'stockfish',
       skillLevel: Math.max(0, Math.min(20, Number(body.engine?.skillLevel ?? body.skillLevel ?? 5))),
+      targetElo: normalizeTargetElo(body.engine?.targetElo ?? body.targetElo),
       movetimeMs: Math.max(25, Math.min(5000, Number(body.engine?.movetimeMs ?? body.movetimeMs ?? 150))),
     },
     compatibility: legacy ? { legacyAgentColor: agentColor } : null,

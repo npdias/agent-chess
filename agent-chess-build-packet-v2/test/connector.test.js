@@ -10,6 +10,7 @@ import {
   parseAgentAction,
   parseAgentOutput,
   publicStatusTraceForAction,
+  resolveJoinTarget,
   runCommandAgent,
   validateLocalCandidate,
 } from '../src/connector.js';
@@ -39,6 +40,54 @@ test('accepts copied browser ticket path without exchanging a seat capability', 
   assert.deepEqual(args, { server: 'http://localhost:3000', path: '/agent?ticket=short-lived', demo: true });
   assert.equal(toWsUrl(args.server, args.path), 'ws://localhost:3000/agent?ticket=short-lived');
   assert.throws(() => parseArgs(['--server', 'http://localhost:3000', '--seat', 'capability', '--path', '/agent?ticket=short-lived', '--demo']), /exactly one/);
+});
+
+test('accepts one full join URL without requiring transport details', () => {
+  const joinUrl = 'http://localhost:3200/agent/join?ticket=short-lived';
+  assert.deepEqual(parseArgs(['--join-url', joinUrl]), { joinUrl });
+  assert.throws(
+    () => parseArgs(['--join-url', joinUrl, '--path', '/agent?ticket=other']),
+    /Use --join-url by itself/
+  );
+});
+
+test('resolves one invitation into its WebSocket target without exposing transport choices', async () => {
+  const joinUrl = 'http://localhost:3200/agent/join?ticket=short-lived';
+  const requests = [];
+  const target = await resolveJoinTarget(async (url) => {
+    requests.push(String(url));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        service: { name: 'Agent Chess' },
+        protocolVersion: '2.0',
+        connection: { websocket: { url: 'ws://localhost:3200/agent?ticket=claimed-seat' } },
+      }),
+    };
+  }, joinUrl);
+
+  assert.equal(target, 'ws://localhost:3200/agent?ticket=claimed-seat');
+  assert.deepEqual(requests, [joinUrl]);
+});
+
+test('maps invitation failures to stable secret-free connector errors', async () => {
+  await assert.rejects(
+    resolveJoinTarget(async () => ({ ok: false, status: 410 }), 'http://localhost:3200/agent/join?ticket=secret'),
+    { message: 'INVITATION_EXPIRED' }
+  );
+  await assert.rejects(
+    resolveJoinTarget(async () => ({ ok: false, status: 409 }), 'http://localhost:3200/agent/join?ticket=secret'),
+    { message: 'INVITATION_ALREADY_CLAIMED' }
+  );
+  await assert.rejects(
+    resolveJoinTarget(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ service: { name: 'Agent Chess' }, protocolVersion: '2.0', connection: {} }),
+    }), 'http://localhost:3200/agent/join?ticket=secret'),
+    { message: 'INVALID_INVITATION_CONTRACT' }
+  );
 });
 
 test('parses JSON agent output with an optional trace summary', () => {

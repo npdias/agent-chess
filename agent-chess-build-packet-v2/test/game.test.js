@@ -62,7 +62,7 @@ test('groups starting moves into ten movable origins', () => {
   ]);
 });
 
-test('builds compact turn without full legal list', () => {
+test('builds compact turn with deterministic portable PNG board image and without full legal list', () => {
   const game = new AgentChessGame();
   const turn = game.buildTurnSnapshot({
     gameId: 'g',
@@ -73,7 +73,7 @@ test('builds compact turn without full legal list', () => {
   });
 
   assert.deepEqual(Object.keys(turn).sort(), [
-    'agentColor', 'balanceForAgent', 'deadline', 'fen', 'gameId', 'material', 'ply', 'positionStatus',
+    'agentColor', 'balanceForAgent', 'boardImage', 'deadline', 'fen', 'gameId', 'material', 'ply', 'positionStatus',
     'protocolVersion', 'recentMoves', 'sideToMove', 'steering', 'turnId', 'type', 'variant',
   ]);
   assert.equal(turn.type, 'turn.start');
@@ -88,6 +88,35 @@ test('builds compact turn without full legal list', () => {
   assert.deepEqual(turn.recentMoves, []);
   assert.deepEqual(turn.steering, { mode: 'locked', guidance: null });
   assert.equal(turn.deadline, null);
+  assert.deepEqual(Object.keys(turn.boardImage).sort(), ['alt', 'dataUrl', 'mimeType', 'type']);
+  assert.equal(turn.boardImage.type, 'image');
+  assert.equal(turn.boardImage.mimeType, 'image/png');
+  assert.match(turn.boardImage.dataUrl, /^data:image\/png;base64,/);
+  const png = Buffer.from(turn.boardImage.dataUrl.split(',')[1], 'base64');
+  assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  assert.equal(png.subarray(12, 16).toString('ascii'), 'IHDR');
+  assert.equal(png.readUInt32BE(16), 512);
+  assert.equal(png.readUInt32BE(20), 512);
+  assert.equal(png[24], 8);
+  assert.equal(png[25], 6);
+  const replay = game.buildTurnSnapshot({
+    gameId: 'g',
+    turnId: 't2',
+    agentColor: 'white',
+    steering: { mode: 'locked', guidance: null },
+    deadline: null,
+  });
+  assert.equal(replay.boardImage.dataUrl, turn.boardImage.dataUrl);
+  game.applyMove('e2e4');
+  const moved = game.buildTurnSnapshot({
+    gameId: 'g',
+    turnId: 't3',
+    agentColor: 'black',
+    steering: { mode: 'locked', guidance: null },
+    deadline: null,
+  });
+  assert.notEqual(moved.boardImage.dataUrl, turn.boardImage.dataUrl);
+  assert.equal(turn.boardImage.alt, 'Canonical board position from authoritative FEN. White to move.');
   assert.deepEqual(turn.material, {
     white: { pawns: 8, knights: 2, bishops: 2, rooks: 2, queens: 1, points: 39 },
     black: { pawns: 8, knights: 2, bishops: 2, rooks: 2, queens: 1, points: 39 },

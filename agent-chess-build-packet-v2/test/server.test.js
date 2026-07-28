@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { Chess } from 'chess.js';
 import WebSocket from 'ws';
 import { createAgentChessServer, normalizeTurnPaceMs } from '../src/server.js';
@@ -102,13 +103,47 @@ test('serves machine discovery map from /llms.txt', async () => {
     assert.match(response.headers.get('content-type') ?? '', /^text\/plain/);
     const discovery = await response.text();
     assert.match(discovery, /docs\/reference\/AGENT_API\.md/);
-    assert.match(discovery, /hosted MCP/i);
-    assert.match(discovery, /REST/i);
-    assert.match(discovery, /WebSocket CLI/i);
+    assert.match(discovery, /Copy full prompt/);
+    assert.match(discovery, /agent-play\.js/);
+    assert.match(discovery, /Direct harness/i);
+    assert.doesNotMatch(discovery, /hosted MCP|REST fallback/i);
     const api = await fetch(`${address.httpUrl}/docs/reference/AGENT_API.md`);
     assert.equal(api.status, 200);
     assert.match(api.headers.get('content-type') ?? '', /^text\/markdown/);
     assert.match(await api.text(), /# Agent Chess agent API/);
+    const connector = await fetch(`${address.httpUrl}/agent-play.js`);
+    assert.equal(connector.status, 200);
+    assert.match(connector.headers.get('content-type') ?? '', /^text\/javascript/);
+    assert.equal(connector.headers.get('cache-control'), 'no-store');
+    assert.match(await connector.text(), /new WebSocket/);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('retries a transient public asset read before responding', async () => {
+  let boardReads = 0;
+  const server = createAgentChessServer({
+    stockfishFactory: async () => new FakeStockfish(),
+    onStaticReadFailure: () => {},
+    readStaticFile: async (path) => {
+      if (path.endsWith('board-interaction.js')) {
+        boardReads += 1;
+        if (boardReads === 1) {
+          const error = new Error('temporary read failure');
+          error.code = 'EAGAIN';
+          throw error;
+        }
+      }
+      return readFile(path);
+    },
+  });
+  const address = await server.start(0);
+  try {
+    const response = await fetch(`${address.httpUrl}/board-interaction.js`);
+    assert.equal(response.status, 200);
+    assert.equal(boardReads, 2);
+    assert.match(await response.text(), /function positionKey/);
   } finally {
     await server.stop();
   }
@@ -302,6 +337,17 @@ test('exports reproducibility metadata only for engine seats', async () => {
       skillLevel: 7, movetimeMs: 90, hostBuild: 'agent-chess-mvp@0.1.0',
     });
 
+    const practiceMatch = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public', targetElo: 500, movetimeMs: 90,
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'engine', name: 'Engine' } },
+    });
+    const practiceExport = await fetch(`${address.httpUrl}/api/matches/${practiceMatch.matchId}/export`).then((response) => response.json());
+    assert.deepEqual(practiceExport.engine, {
+      name: 'Agent Chess Practice Bot', package: 'agent-chess-mvp@0.1.0',
+      profileId: 'practice-estimated-500', targetElo: 500, strengthMode: 'practice',
+      movetimeMs: 90, hostBuild: 'agent-chess-mvp@0.1.0',
+    });
+
     const agentMatch = await createMatch(address, {
       mode: 'exhibition', visibility: 'public',
       seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'agent', name: 'Agent' } },
@@ -409,6 +455,9 @@ test('durable REST agent session claims an invitation then submits an idempotent
     const claim = await fetch(invite.connection.rest.claimUrl, { method: 'POST' });
     assert.equal(claim.status, 201);
     const { sessionToken } = await claim.json();
+    const claimedSnapshot = await getMatch(address, created.matchId);
+    assert.equal(claimedSnapshot.connected, false);
+    assert.equal(claimedSnapshot.agentSessionActive, true);
     const auth = { authorization: `Bearer ${sessionToken}` };
     const joined = await fetch(`${address.httpUrl}/api/agent/match`, { headers: auth });
     assert.equal(joined.status, 200);
@@ -608,17 +657,14 @@ test('agent invitation describes a valid single-use connection without leaking i
     assert.equal(contract.protocolVersion, '2.0');
     assert.equal(contract.match.id, created.matchId);
     assert.equal(contract.seat.color, 'white');
-    assert.equal(contract.connection.wsUrl, `${address.wsUrl}${ticket.wsPath}`);
-    assert.deepEqual(contract.connection.rest.schemas, {
-      decision: { turnId: 'string', source: 'string', phase: 'string', summary: 'string', selectedMove: 'uci', confidence: 'number 0..1', elapsedMs: 'integer 0..300000' },
-      move: { turnId: 'string', moveUci: 'uci' },
-    });
-    assert.deepEqual(contract.instructions.restActionOrder, [
-      'Claim invitation.', 'Read match or await turn.', 'List legal moves.', 'Publish sanitized decision.', 'Submit move.', 'Read result.',
-    ]);
-    assert.deepEqual(contract.instructions.retry, {
-      sameMove: 'idempotent', conflictingMove: 'CONFLICTING_REPLAY', staleTurn: 'STALE_TURN',
-    });
+    assert.deepEqual(Object.keys(contract.connection).sort(), ['rest', 'websocket']);
+    assert.equal(
+      contract.connection.rest.claimUrl,
+      `${address.httpUrl}/api/agent/claim?ticket=${encodeURIComponent(ticket.ticket)}`,
+    );
+    assert.equal(contract.connection.websocket.url, `${address.wsUrl}${ticket.wsPath}`);
+    assert.equal('mcp' in contract.connection, false);
+    assert.equal('restActionOrder' in contract.instructions, false);
     assert.match(contract.instructions.actionOrder.join(' '), /open WebSocket.*match.start.*turn.start.*submit legal UCI/i);
     assert.match(contract.security.secretHandling, /secret.*expires.*single-use/i);
     assert.deepEqual(contract.publicTrace.phases, ['observe', 'probe', 'evaluate', 'choose', 'submit']);
@@ -633,7 +679,7 @@ test('agent invitation describes a valid single-use connection without leaking i
 
     const repeatedInvite = await fetch(`${address.httpUrl}${ticket.joinPath}`);
     assert.equal(repeatedInvite.status, 200);
-    const first = new WebSocket(contract.connection.wsUrl);
+    const first = new WebSocket(contract.connection.websocket.url);
     await new Promise((resolve, reject) => { first.once('open', resolve); first.once('error', reject); });
     const expiringInvitation = await fetch(`${address.httpUrl}/api/agent-sessions`, {
       method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
@@ -649,7 +695,7 @@ test('agent invitation describes a valid single-use connection without leaking i
     const expired = new WebSocket(`${address.wsUrl}${expiringSocket.wsPath}`);
     await new Promise((resolve) => { expired.once('close', resolve); expired.once('error', resolve); });
     ticketNow = Date.now();
-    const second = new WebSocket(contract.connection.wsUrl);
+    const second = new WebSocket(contract.connection.websocket.url);
     await new Promise((resolve) => { second.once('close', resolve); second.once('error', resolve); });
     const unknown = await fetch(`${address.httpUrl}/agent/join?ticket=unknown`);
     assert.equal(unknown.status, 410);
@@ -754,6 +800,36 @@ test('agent reconnect preserves original active-turn deadline', async () => {
     assert.equal(replay.turnId, firstTurn.turnId);
     assert.equal(replay.deadline, firstTurn.deadline);
     second.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('agent decision deadline starts when active turn reaches its first transport', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish() });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public', decisionDeadlineMs: 80,
+      seats: { white: { kind: 'agent', name: 'Agent' }, black: { kind: 'human', name: 'Human' } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const beforeConnect = await getMatch(address, created.matchId);
+    assert.equal(beforeConnect.status, 'active');
+    assert.equal(beforeConnect.activeTurn.deadline, null);
+
+    const ticket = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST', headers: { authorization: `Bearer ${created.capabilities.white}` },
+    }).then((response) => response.json());
+    const socket = new WebSocket(`${address.wsUrl}${ticket.wsPath}`);
+    const messages = collectMessages(socket);
+    await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+    const turn = await messages.next((message) => message.type === 'turn.start');
+    assert.equal(turn.deadlineMs, 80);
+    assert.ok(new Date(turn.deadline).getTime() > Date.now());
+    const ended = await messages.next((message) => message.type === 'game.end');
+    assert.equal(ended.failureCode, 'AGENT_FAILURE');
+    socket.close();
   } finally {
     await server.stop();
   }

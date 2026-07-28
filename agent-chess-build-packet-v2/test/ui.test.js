@@ -11,6 +11,9 @@ const derivePlayerState = appModule.derivePlayerState ?? (() => '');
 const derivePostGameInterview = appModule.derivePostGameInterview ?? (() => ({}));
 const deriveBalanceOfPower = appModule.deriveBalanceOfPower ?? (() => ({}));
 const hasAgentJoined = appModule.hasAgentJoined ?? (() => false);
+const deriveConnectorStatus = appModule.deriveConnectorStatus ?? (() => ({}));
+const deriveHeaderStatus = appModule.deriveHeaderStatus ?? (() => ({}));
+const buildAgentPlayCommand = appModule.buildAgentPlayCommand ?? (() => '');
 const selectThoughtTicker = appModule.selectThoughtTicker ?? (() => []);
 const buildAgentHandoffPrompt = appModule.buildAgentHandoffPrompt ?? (() => '');
 
@@ -37,9 +40,14 @@ test('quotes copied ticket paths for zsh argv parsing', () => {
   assert.equal(result.stdout.trim(), path);
 });
 
-test('suppresses npm script echo in copied ticket command', async () => {
-  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
-  assert.match(app, /npm run --silent connect -- --server/);
+test('builds a zero-install connector command that works outside the project checkout', async () => {
+  const joinUrl = 'https://chess.example/agent/join?ticket=one-use-secret';
+  const command = buildAgentPlayCommand(joinUrl);
+  assert.match(command, /^node --input-type=module --eval /);
+  assert.match(command, / -- join --join-url /);
+  assert.match(command, /https:\/\/chess\.example\/agent-play\.js/);
+  assert.doesNotMatch(command, /\bnpm\b|Agent Chess project directory/);
+  assert.equal(command.split(joinUrl).length - 1, 1);
 });
 
 
@@ -130,7 +138,9 @@ test('groups SAN history into numbered move rows', () => {
 
 test('binds replay selection to individual native SAN buttons', async () => {
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
-  assert.match(app, /button\.addEventListener\('click', \(\) => \{ replayPly = replayPlyForMove\(index, color\)/);
+  assert.match(app, /const ply = replayPlyForMove\(index, color\)/);
+  assert.match(app, /button\.addEventListener\('click', \(\) => \{\s*replayPly = ply/);
+  assert.match(app, /button\.setAttribute\('aria-pressed'/);
   assert.doesNotMatch(app, /row\.addEventListener\('click'/);
 });
 
@@ -326,6 +336,11 @@ test('defines generic exhibition controls without capability leakage', async () 
   assert.match(html, /name="humanColor"/);
   assert.match(html, /Human vs Computer/);
   assert.match(html, /My agent vs Computer/);
+  assert.match(html, /Computer strength/);
+  assert.match(html, /value="250"/);
+  assert.match(html, /value="unlimited"/);
+  assert.match(html, /Unrated practice/);
+  assert.doesNotMatch(html, /Stockfish skill/);
   assert.match(app, /Agent plays as/);
   assert.match(html, /Unrated exhibition/);
   assert.match(html, /id="promotion-dialog"/);
@@ -343,14 +358,23 @@ test('defines generic exhibition controls without capability leakage', async () 
   assert.match(app, /document\.createElement\('button'\)/);
   assert.match(css, /\.board\s*\{[^}]*grid-template-columns:\s*repeat\(8/);
   assert.match(css, /\.board\s*\{[^}]*grid-template-rows:\s*repeat\(8/);
+  assert.match(css, /\.field-help\s*\{[^}]*font-size:/);
 });
 
 test('builds agent versus computer setup payload without legacy fields', () => {
-  assert.deepEqual(buildExhibitionPayload({ matchup: 'agent-engine', color: 'black', skillLevel: '9' }), {
+  assert.deepEqual(buildExhibitionPayload({ matchup: 'agent-engine', color: 'black', targetElo: '500' }), {
     controller: { kind: 'agent', name: 'My agent' },
     opponent: { kind: 'engine', name: 'Computer' },
-    color: 'black', skillLevel: 9, movetimeMs: 500, decisionDeadlineMs: 90_000, turnPaceMs: 800,
+    color: 'black', targetElo: 500, movetimeMs: 500, decisionDeadlineMs: 180_000, turnPaceMs: 800,
   });
+});
+
+test('builds unlimited computer setup payload', () => {
+  assert.equal(buildExhibitionPayload({
+    matchup: 'human-engine',
+    color: 'white',
+    targetElo: 'unlimited',
+  }).targetElo, 'unlimited');
 });
 
 test('uses owned agent color for material while keeping spectators neutral', () => {
@@ -458,10 +482,21 @@ test('builds a self-contained agent handoff prompt around the fresh join link', 
   const prompt = buildAgentHandoffPrompt(joinUrl);
   assert.equal(prompt.split(joinUrl).length - 1, 1);
   for (const expected of [
-    'Open this Agent Chess link immediately',
-    'hosted MCP',
-    'REST fallback',
-    'WebSocket CLI fallback',
+    'node --input-type=module --eval',
+    'No Agent Chess checkout or package install is required',
+    'Run returned turn command',
+    'attachments[0]',
+    'image/png',
+    'provider image input',
+    'imagePath',
+    'BOARD_IMAGE_UNSUPPORTED',
+    'FEN remains canonical source of truth',
+    'Run status after any command failure',
+    'same match and seat',
+    'same agent task',
+    'Do not launch another model process',
+    'compact turn',
+    'Submit move JSON before posting commentary',
     'Transport automation must not select chess moves',
     'model must select every move',
     'Never use random, preference-list, engine, or first-legal fallback',
@@ -469,16 +504,15 @@ test('builds a self-contained agent handoff prompt around the fresh join link', 
     'structured decision fields only',
     'bounded public summaries',
     'confidence and elapsedMs',
-    'connection.wsUrl',
-    'match.start',
     'turn.start',
     'moves.list',
     'moves.list_all',
-    'trace.publish',
     'move.submit',
     'game.end',
     'Never publish private chain-of-thought',
   ]) assert.match(prompt, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(prompt, /Keep connector process running/);
+  assert.doesNotMatch(prompt, /hosted MCP|REST fallback|connection\.mcp|connection\.rest/);
 });
 
 test('keeps invitation copy feedback aligned to the three-minute claim window', async () => {
@@ -591,9 +625,17 @@ test('keeps board footer compact and technical position data out of sight', asyn
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const footer = html.match(/<div class="board-footer">([\s\S]*?)<\/div>/)?.[1] ?? '';
   assert.match(footer, /id="material"/);
-  assert.match(footer, /id="return-live"/);
+  assert.doesNotMatch(footer, /id="return-live"/);
   assert.match(footer, /id="flip-board"/);
   assert.doesNotMatch(footer, /id="fen"|No clock|position-line/);
+});
+
+test('keeps follow-live recovery visible beside move history', async () => {
+  const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  const movesPanel = html.match(/<section class="panel moves-panel"[\s\S]*?<\/section>/)?.[0] ?? '';
+  assert.match(movesPanel, /id="return-live"/);
+  assert.match(movesPanel, /disabled>Following live<\/button>/);
+  assert.doesNotMatch(movesPanel, /id="return-live"[^>]*hidden/);
 });
 
 test('uses mode-neutral move-history empty copy', async () => {
@@ -625,18 +667,37 @@ test('collapses connected onboarding to a slim status row', async () => {
     readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
   ]);
   assert.match(app, /const agentHasJoined = hasAgentJoined\(match\)/);
+  assert.match(app, /const agentAvailable = Boolean\(match\.connected \|\| match\.agentSessionActive\)/);
   assert.match(app, /connector\.hidden = !ownsAgentSeat \|\| summary\.review/);
   assert.match(app, /connector\.classList\.toggle\('connected', agentHasJoined\)/);
-  assert.match(app, /copy-agent-prompt'\)\.hidden = Boolean\(match\.connected\) \|\| summary\.review/);
-  assert.match(app, /copy-agent-link'\)\.hidden = Boolean\(match\.connected\) \|\| summary\.review/);
+  assert.match(app, /copy-agent-prompt'\)\.hidden = agentAvailable \|\| summary\.review/);
+  assert.match(app, /copy-agent-link'\)\.hidden = agentAvailable \|\| summary\.review/);
   assert.match(app, /connector-feedback'\)\.hidden = agentHasJoined/);
   assert.match(css, /\.connector-card\.connected\s*\{[^}]*display:\s*flex[^}]*min-height:\s*0[^}]*padding:\s*8px 10px/);
 });
 
 test('does not mistake an engine-first move for an agent connection', () => {
   assert.equal(hasAgentJoined({ connected: false, game: { ply: 1 }, activity: [{ actor: 'engine', type: 'move.accepted' }] }), false);
+  assert.equal(hasAgentJoined({ connected: false, agentSessionActive: true, game: { ply: 0 }, activity: [] }), true);
   assert.equal(hasAgentJoined({ connected: true, game: { ply: 0 }, activity: [] }), true);
   assert.equal(hasAgentJoined({ connected: false, game: { ply: 2 }, activity: [{ actor: 'agent', type: 'agent.decision' }] }), true);
+  assert.equal(hasAgentJoined({ connected: false, game: { ply: 0 }, activity: [{ type: 'agent.connect', actor: 'connector' }] }), true);
+});
+
+test('uses explicit connector states for invitation, live transport, and reconnect', () => {
+  assert.deepEqual(deriveConnectorStatus({ connected: false }, false), { label: 'Invitation ready', state: 'ready' });
+  assert.deepEqual(deriveConnectorStatus({ connected: true }, true), { label: 'Agent online', state: 'online' });
+  assert.deepEqual(deriveConnectorStatus({ connected: false, agentSessionActive: true }, true), { label: 'Agent ready', state: 'online' });
+  assert.deepEqual(deriveConnectorStatus({ connected: false }, true), { label: 'Connection lost', state: 'offline' });
+});
+
+test('keeps global match status aligned with agent transport and lifecycle', () => {
+  const agentSeat = { seats: { white: { kind: 'agent' }, black: { kind: 'engine' } }, game: { gameOver: false } };
+  assert.deepEqual(deriveHeaderStatus({ ...agentSeat, connected: true }), { label: 'Agent online', connected: true });
+  assert.deepEqual(deriveHeaderStatus({ ...agentSeat, connected: false, agentSessionActive: true }), { label: 'Agent ready', connected: true });
+  assert.deepEqual(deriveHeaderStatus({ ...agentSeat, connected: false }), { label: 'Agent offline', connected: false });
+  assert.deepEqual(deriveHeaderStatus({ seats: { white: { kind: 'human' }, black: { kind: 'engine' } }, game: { gameOver: false } }), { label: 'Live', connected: false });
+  assert.deepEqual(deriveHeaderStatus({ ...agentSeat, status: 'completed', game: { gameOver: true } }), { label: 'Match complete', connected: false });
 });
 
 test('hides agent decision surface when no agent is playing', async () => {
@@ -657,10 +718,14 @@ test('names exactly who owns the current turn', () => {
   assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: true, seats, game: { turn: 'white' }, activity: [{ phase: 'evaluate' }] }), {
     headline: 'Luna is thinking', detail: 'Evaluate', state: 'thinking', activeColor: 'white',
   });
+  assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: false, agentSessionActive: true, seats, game: { turn: 'white' }, activity: [{ phase: 'evaluate' }] }), {
+    headline: 'Luna is thinking', detail: 'Evaluate', state: 'thinking', activeColor: 'white',
+  });
   assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: true, seats, game: { turn: 'black' }, activity: [] }), {
     headline: 'Computer is moving', detail: 'Engine turn', state: 'moving', activeColor: 'black',
   });
   assert.equal(derivePlayerState({ status: 'active', connected: true, seats, game: { turn: 'white' } }, 'white'), 'Thinking');
+  assert.equal(derivePlayerState({ status: 'active', connected: false, agentSessionActive: true, seats, game: { turn: 'white' } }, 'white'), 'Thinking');
   assert.equal(derivePlayerState({ status: 'active', connected: true, seats, game: { turn: 'white' } }, 'black'), 'Watching');
   assert.equal(derivePlayerState({ status: 'active', connected: false, seats, game: { turn: 'white' } }, 'white'), 'Connecting');
   assert.equal(derivePlayerState({ status: 'completed', connected: false, seats, game: { turn: 'black', gameOver: true } }, 'white'), 'Finished');

@@ -121,6 +121,16 @@ export class MatchSession {
     });
   }
 
+  recordConnectorState(state) {
+    if (!['connected', 'disconnected'].includes(state)) throw new Error('INVALID_CONNECTOR_STATE');
+    return this._recordActivity({
+      type: state === 'connected' ? 'agent.connect' : 'agent.disconnect',
+      source: 'system',
+      actor: 'connector',
+      summary: state === 'connected' ? 'Agent connected' : 'Agent disconnected',
+    });
+  }
+
   submitAgentMove({ turnId, moveUci, publicTrace }) {
     const seat = this.activeSeat();
     if (turnId !== this.currentTurnId || this.closedTurnIds.has(turnId)) {
