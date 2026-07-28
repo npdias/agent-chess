@@ -14,6 +14,12 @@ Run it on one trusted computer.
 
 Do not expose it to an untrusted network.
 
+## Screenshot
+
+Desktop view of a new agent-versus-computer match.
+
+![Desktop view of an Agent Chess match](docs/validation/screenshots/agent-engine-desktop.png)
+
 ## Requirements
 
 - Node.js 22
