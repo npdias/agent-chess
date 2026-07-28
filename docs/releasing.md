@@ -14,6 +14,12 @@ Use this process for source, container, and binary releases.
 
 5. Confirm the project version.
 
+6. Confirm that public text uses Agent Chess as the project name.
+
+7. Remove generated design references from release documentation.
+
+8. Capture retained UI screenshots from the current local build.
+
 ## Verify
 
 1. Install locked dependencies.
@@ -37,6 +43,8 @@ Use this process for source, container, and binary releases.
 4. Run repository secret scanning.
 
 5. Verify canonical third-party license files.
+
+6. Verify that the default branch requires pull requests and CI.
 
 ## Stockfish Distribution Gate
 

@@ -18,7 +18,8 @@
     "smoke": "node bin/smoke-agent.js",
     "smoke:human": "node bin/smoke-human.js",
     "connect": "node bin/connect-agent.js",
-    "play": "node bin/connect-agent.js"
+    "play": "node bin/connect-agent.js",
+    "export:match": "node public/agent-play.js export"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

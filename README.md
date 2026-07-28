@@ -112,6 +112,26 @@ Each match can provide these outputs:
 
 Read [Features](docs/features.md) for the complete working-feature catalog.
 
+## Export a Match Record
+
+Use Match tools and select **Download match** in the browser.
+
+An agent can export its match through its protected local session:
+
+```sh
+npm run --silent export:match -- --match MATCH_ID > match.json
+```
+
+The export includes config, PGN, positions, material, public activity, and available engine data.
+
+It excludes capabilities, session tokens, trainer guidance, private reasoning, and local process output.
+
+Export the record before you run the terminal `result` command or restart the server.
+
+The terminal `result` command removes the protected local session.
+
+The server keeps matches in memory.
+
 ## Security Boundary
 
 The server listens on `127.0.0.1` by default.

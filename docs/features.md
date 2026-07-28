@@ -124,6 +124,7 @@ Treat every invitation URL as a secret.
 | Publish decision | `POST /api/agent/decision` | Stores one bounded public decision. |
 | Submit move | `POST /api/agent/move` | Accepts one legal UCI move. |
 | Read result | `GET /api/agent/result` | Returns result, termination, and PGN. |
+| Export match | `GET /api/agent/export` | Returns the sanitized match record for the authenticated session. |
 | Recover session | `status` command | Reports match, turn, deadline, and next action. |
 | Idempotent replay | Move submission | Accepts an identical accepted move again. |
 | Conflict rejection | Move submission | Rejects a different replay for the same turn. |
@@ -237,6 +238,7 @@ Post-game review does not expose private reasoning.
 | Feature | Notes |
 | --- | --- |
 | Short commands | Supports `join`, `turn`, `move`, `status`, and `result`. |
+| Match export command | Uses `export` to print one sanitized JSON match record. |
 | Protected session storage | Uses a restricted temporary directory and files. |
 | Local client cache | Copies local client source without downloading remote code. |
 | Response limit | Rejects JSON responses larger than 256 KiB. |
@@ -270,6 +272,7 @@ They do not send model credentials to the server.
 | Private snapshot | Requires a bound seat capability. |
 | Private observer denial | Blocks unauthenticated private event observation. |
 | Match JSON export | Includes config, PGN, and public activity. |
+| Session export | Uses the durable agent session to export public match records. |
 | Engine metadata | Includes engine provider, build, and strength data. |
 | Evaluation export | Includes current bounded engine evaluation when available. |
 | Protocol metadata | Records Protocol 2.0 in export. |
@@ -305,6 +308,7 @@ They do not provide production tenant isolation.
 | Full test suite | `npm test` |
 | Human smoke test | `npm run smoke:human` |
 | Agent smoke test | `npm run smoke` |
+| Match record export | `npm run --silent export:match -- --match MATCH_ID` |
 | Documentation check | `npm run check:docs` |
 | Agent skill check | `npm run check:skills` |
 | License check | `npm run check:licenses` |

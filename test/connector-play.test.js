@@ -46,13 +46,13 @@ function jsonLines(stream) {
   };
 }
 
-async function createAgentVsHuman(address) {
+async function createAgentVsHuman(address, { visibility = 'public' } = {}) {
   const response = await fetch(`${address.httpUrl}/api/matches`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       mode: 'exhibition',
-      visibility: 'public',
+      visibility,
       seats: {
         white: { kind: 'agent', name: 'Agent' },
         black: { kind: 'human', name: 'Human' },
@@ -196,6 +196,44 @@ test('short REST commands resume one match across separate client processes', as
     const captured = [joined, turn, moved, status].flatMap(({ stdout, stderr }) => [stdout, stderr]).join('\n');
     assert.equal(captured.includes(invitation.ticket), false);
     assert.equal(captured.includes(storedSession.sessionToken), false);
+  } finally {
+    await server.stop();
+    if (sessionDirectory) await rm(sessionDirectory, { recursive: true, force: true });
+    await rm(emptyCwd, { recursive: true, force: true });
+  }
+});
+
+test('short REST export returns one sanitized private match record', async () => {
+  const server = createAgentChessServer();
+  const address = await server.start(0);
+  const emptyCwd = await mkdtemp(join(tmpdir(), 'agent-chess-rest-export-'));
+  let sessionDirectory;
+  try {
+    const created = await createAgentVsHuman(address, { visibility: 'private' });
+    const invitation = await fetch(`${address.httpUrl}/api/agent-sessions`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${created.capabilities.white}` },
+    }).then((response) => response.json());
+    const joinUrl = new URL(invitation.joinPath, address.httpUrl).toString();
+    const joined = await runClient(hostedClientPath, ['join', '--join-url', joinUrl], emptyCwd);
+    sessionDirectory = dirname(joined.message.clientPath);
+    const storedSession = JSON.parse(await readFile(joined.message.sessionPath, 'utf8'));
+
+    const exported = await runClient(
+      joined.message.clientPath,
+      ['export', '--match', created.matchId],
+      emptyCwd,
+    );
+
+    assert.equal(exported.message.type, 'match.export');
+    assert.equal(exported.message.id, created.matchId);
+    assert.equal(exported.message.config.visibility, 'private');
+    assert.ok(Array.isArray(exported.message.activity));
+    assert.ok(Array.isArray(exported.message.positions));
+    assert.equal(typeof exported.message.pgn, 'string');
+    assert.equal(exported.stdout.includes(invitation.ticket), false);
+    assert.equal(exported.stdout.includes(created.capabilities.white), false);
+    assert.equal(exported.stdout.includes(storedSession.sessionToken), false);
   } finally {
     await server.stop();
     if (sessionDirectory) await rm(sessionDirectory, { recursive: true, force: true });
