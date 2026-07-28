@@ -9,11 +9,12 @@ const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 const TRACE_SOURCES = new Set(['agent_reported', 'provider_summary', 'adapter_generated']);
 const SESSION_VERSION = 1;
 const SESSION_ROOT = join(tmpdir(), 'agent-chess');
-const SHORT_COMMANDS = new Set(['join', 'turn', 'move', 'status', 'result']);
+const SHORT_COMMANDS = new Set(['join', 'turn', 'move', 'status', 'result', 'export']);
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'aborted']);
 const PNG_DATA_URL_PREFIX = 'data:image/png;base64,';
 const PNG_SIGNATURE = Buffer.from('89504e470d0a1a0a', 'hex');
 const MAX_JSON_RESPONSE_BYTES = 256 * 1024;
+const MAX_EXPORT_RESPONSE_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 function emit(message) {
@@ -271,14 +272,14 @@ function invitationUrl(value) {
   return url;
 }
 
-async function fetchBounded(url, options, phase) {
+async function fetchBounded(url, options, phase, maxResponseBytes = MAX_JSON_RESPONSE_BYTES) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   timeout.unref?.();
   try {
     const response = await fetch(url, { ...options, signal: controller.signal });
     const declaredSize = Number(response.headers.get('content-length'));
-    if (Number.isFinite(declaredSize) && declaredSize > MAX_JSON_RESPONSE_BYTES) {
+    if (Number.isFinite(declaredSize) && declaredSize > maxResponseBytes) {
       throw coded('RESPONSE_TOO_LARGE', phase, { recoverable: false });
     }
     const chunks = [];
@@ -286,7 +287,7 @@ async function fetchBounded(url, options, phase) {
     for await (const chunk of response.body ?? []) {
       const bytes = Buffer.from(chunk);
       size += bytes.length;
-      if (size > MAX_JSON_RESPONSE_BYTES) {
+      if (size > maxResponseBytes) {
         throw coded('RESPONSE_TOO_LARGE', phase, { recoverable: false });
       }
       chunks.push(bytes);
@@ -379,6 +380,7 @@ async function requestJson(url, {
   method = 'GET',
   body = undefined,
   phase = 'request',
+  maxResponseBytes = MAX_JSON_RESPONSE_BYTES,
 } = {}) {
   let response;
   let responseBody;
@@ -394,6 +396,7 @@ async function requestJson(url, {
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       },
       phase,
+      maxResponseBytes,
     ));
   } catch (error) {
     if (error?.code === 'RESPONSE_TOO_LARGE') throw error;
@@ -634,6 +637,17 @@ async function runResult() {
   if (terminalResult(result)) await rm(paths.directory, { recursive: true, force: true });
 }
 
+async function runExport() {
+  const matchId = safeMatchId(requireArg('--match', 'load_session'));
+  const { session } = await readSession(matchId);
+  const record = await requestJson(`${session.serverUrl}/api/agent/export`, {
+    token: session.sessionToken,
+    phase: 'export_match',
+    maxResponseBytes: MAX_EXPORT_RESPONSE_BYTES,
+  });
+  emit({ ...record, type: 'match.export' });
+}
+
 async function runWebSocket() {
   const { joinUrl } = parseArgs(process.argv);
   const socket = new WebSocket(await resolveSocket(joinUrl));
@@ -781,6 +795,7 @@ const selectedRun = command === 'join' ? runJoin
     : command === 'move' ? runMove
       : command === 'status' ? runStatus
         : command === 'result' ? runResult
+          : command === 'export' ? runExport
           : runWebSocket;
 
 selectedRun().catch((error) => {

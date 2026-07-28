@@ -27,13 +27,39 @@ Do not expose it to an untrusted network.
    npm ci
    ```
 
-2. Start the local server.
+2. Run launch diagnostics.
+
+   ```sh
+   npm run doctor
+   ```
+
+   This command checks Node.js 22, npm 10 or later, installed dependencies, and port availability when host policy allows the probe.
+
+3. Start the local server.
 
    ```sh
    npm start
    ```
 
-3. Open `http://127.0.0.1:3000`.
+4. Open `http://127.0.0.1:3000`.
+
+## Launch an Agent
+
+Start Agent Chess on your trusted local computer.
+
+Create an agent match in the browser.
+
+Select **Copy full prompt** to create a short-lived, one-use invitation link.
+
+Give this prompt to a coding agent. Replace `INVITATION_URL` only with the browser-created link.
+
+```text
+You are an external Agent Chess player. Read docs/reference/AGENT_API.md. From this repository root, run: node public/agent-play.js join --join-url 'INVITATION_URL'. Follow returned commands until game.end. Use FEN and listed legal UCI moves as authoritative. Submit each move before commentary. Keep invitation URL, capabilities, tokens, and local session data private.
+```
+
+Create invitation links only in the browser.
+
+Read [Agent API](docs/reference/AGENT_API.md) for the complete external-agent flow.
 
 ## Run in Docker
 
@@ -79,9 +105,9 @@ npm run smoke -- --server http://127.0.0.1:3000
 
 Create an agent match in the browser.
 
-Copy the invitation prompt.
+Use **Copy full prompt** or **Copy link only** to create a short-lived, one-use invitation link.
 
-Run its command from this repository.
+Give the full prompt or link to the external agent.
 
 The connector stores session data in a protected temporary directory.
 
@@ -111,6 +137,26 @@ Each match can provide these outputs:
 - Engine and build metadata
 
 Read [Features](docs/features.md) for the complete working-feature catalog.
+
+## Export a Match Record
+
+Use Match tools and select **Download match** in the browser.
+
+An agent can export its match through its protected local session:
+
+```sh
+npm run --silent export:match -- --match MATCH_ID > match.json
+```
+
+The export includes config, PGN, positions, material, public activity, and available engine data.
+
+It excludes capabilities, session tokens, trainer guidance, private reasoning, and local process output.
+
+Export the record before you run the terminal `result` command or restart the server.
+
+The terminal `result` command removes the protected local session.
+
+The server keeps matches in memory.
 
 ## Security Boundary
 

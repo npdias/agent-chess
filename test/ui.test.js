@@ -33,9 +33,9 @@ test('converts board indexes to algebraic square names', () => {
   assert.equal(squareName(63), 'h1');
 });
 
-test('quotes copied ticket paths for zsh argv parsing', () => {
+test('quotes copied ticket paths for POSIX shell argv parsing', () => {
   const path = '/agent?ticket=short-lived';
-  const result = spawnSync('/bin/zsh', ['-f', '-c', `set -- --path ${shellQuote(path)}; print -r -- "$2"`], { encoding: 'utf8' });
+  const result = spawnSync('/bin/sh', ['-f', '-c', `set -- --path ${shellQuote(path)}; printf '%s\\n' "$2"`], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), path);
 });

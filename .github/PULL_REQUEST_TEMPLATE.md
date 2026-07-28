@@ -8,19 +8,20 @@ Describe problem, evidence, or requirement.
 
 ## Validation
 
+- [ ] `npm run check:docs`
 - [ ] `npm test`
 - [ ] `npm audit --omit=dev`
 - [ ] Manual checks, if applicable
 
 List commands and results.
 
-## Security and release checks
+## Evidence
 
-- [ ] No credentials, tokens, private paths, or private reasoning
-- [ ] Public API or protocol changes include docs and tests
-- [ ] User-visible behavior changes update `docs/features.md`
-- [ ] New dependencies are necessary and reviewed
-- [ ] Breaking changes are identified
+- [ ] Security: no credentials, tokens, private paths, or private reasoning
+- [ ] License: new dependencies are necessary and reviewed
+- [ ] Tests: changed behavior has test evidence
+- [ ] Docs: public API, protocol, or user-visible changes have docs
+- [ ] Release: breaking changes are identified
 
 ## Related work
 

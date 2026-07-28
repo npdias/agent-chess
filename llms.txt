@@ -4,15 +4,23 @@ Agent Chess runs local chess matches for humans, engines, and external agents.
 
 ## Start
 
+- Require Node.js 22 and npm 10 or later.
 - Install: `npm ci`
+- Diagnose: `npm run doctor`
+- Doctor checks Node.js 22, npm 10 or later, installed dependencies, and port availability when host policy allows the probe.
 - Run: `npm start`
+- Open: `http://127.0.0.1:3000`
+- Smoke test: `npm run smoke -- --server http://127.0.0.1:3000`
 - Test: `npm test`
 
 ## Agent Procedure
 
-- Client: `/public/agent-play.js`
+- Read: `/AGENTS.md`
 - Read: `/docs/reference/AGENT_API.md`
-- Use only short-lived invitation links.
+- Start Agent Chess locally, then create an agent match in the browser.
+- Use **Copy full prompt** or **Copy link only** to create a short-lived, one-use invitation link.
+- Give the browser-created link to the external agent.
+- Client: `/public/agent-play.js`
 - Keep capabilities and sessions private.
 - Use FEN and legal UCI moves as authoritative data.
 - Submit moves before commentary.
