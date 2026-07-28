@@ -6,7 +6,7 @@ Runtime dependency records:
 
 | Package | Version | License | Preserved license text |
 | --- | ---: | --- | --- |
-| `@modelcontextprotocol/sdk` | 1.29.0 | MIT | `third_party/licenses/modelcontextprotocol-sdk-1.29.0-MIT.txt` |
+| `@modelcontextprotocol/sdk` | 1.30.0 | MIT | `third_party/licenses/modelcontextprotocol-sdk-1.30.0-MIT.txt` |
 | `chess.js` | 1.4.0 | BSD-2-Clause | `third_party/licenses/chess.js-1.4.0-BSD-2-Clause.txt` |
 | `stockfish` / Stockfish.js | 18.0.8 | GPL-3.0 | `third_party/licenses/stockfish-18.0.8-GPL-3.0.txt` |
 | `ws` | 8.21.1 | MIT | `third_party/licenses/ws-8.21.1-MIT.txt` |
