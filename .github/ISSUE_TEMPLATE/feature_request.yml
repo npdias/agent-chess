@@ -8,7 +8,7 @@ body:
     id: problem
     attributes:
       label: Problem
-      description: Describe user need and current limitation.
+      description: Describe the user need and current limit.
     validations:
       required: true
 
@@ -16,7 +16,7 @@ body:
     id: proposal
     attributes:
       label: Proposed change
-      description: Describe desired behavior and scope.
+      description: Describe the required behavior and scope.
     validations:
       required: true
 
@@ -24,7 +24,7 @@ body:
     id: value
     attributes:
       label: User value
-      description: Explain who benefits and how.
+      description: Explain the user benefit.
     validations:
       required: true
 
@@ -32,7 +32,7 @@ body:
     id: alternatives
     attributes:
       label: Alternatives
-      description: List existing tools or smaller changes that can solve need.
+      description: List existing tools or smaller changes that can solve the need.
 
   - type: textarea
     id: acceptance

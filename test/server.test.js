@@ -345,7 +345,7 @@ test('exports reproducibility metadata only for engine seats', async () => {
     const engineExport = await fetch(`${address.httpUrl}/api/matches/${engineMatch.matchId}/export`).then((response) => response.json());
     assert.deepEqual(engineExport.engine, {
       name: 'Stockfish 18 Lite', package: 'stockfish@18.0.8', profileId: 'stockfish-skill-7-movetime-90',
-      skillLevel: 7, movetimeMs: 90, hostBuild: 'agent-chess-mvp@0.1.0',
+      skillLevel: 7, movetimeMs: 90, hostBuild: 'agent-chess@0.1.0-alpha',
     });
 
     const practiceMatch = await createMatch(address, {
@@ -354,9 +354,9 @@ test('exports reproducibility metadata only for engine seats', async () => {
     });
     const practiceExport = await fetch(`${address.httpUrl}/api/matches/${practiceMatch.matchId}/export`).then((response) => response.json());
     assert.deepEqual(practiceExport.engine, {
-      name: 'Agent Chess Practice Bot', package: 'agent-chess-mvp@0.1.0',
+      name: 'Agent Chess Practice Bot', package: 'agent-chess@0.1.0-alpha',
       profileId: 'practice-estimated-500', targetElo: 500, strengthMode: 'practice',
-      movetimeMs: 90, hostBuild: 'agent-chess-mvp@0.1.0',
+      movetimeMs: 90, hostBuild: 'agent-chess@0.1.0-alpha',
     });
 
     const agentMatch = await createMatch(address, {

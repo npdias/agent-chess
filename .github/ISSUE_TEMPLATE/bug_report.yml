@@ -7,13 +7,13 @@ body:
   - type: markdown
     attributes:
       value: |
-        Do not report security issues in a public issue. Follow SECURITY.md.
+        Do not report a security issue here. Follow SECURITY.md.
 
   - type: textarea
     id: summary
     attributes:
       label: Summary
-      description: Describe problem and its effect.
+      description: Describe the problem and its effect.
     validations:
       required: true
 
@@ -21,7 +21,7 @@ body:
     id: steps
     attributes:
       label: Reproduction steps
-      description: Give smallest sequence that reproduces problem.
+      description: Give the smallest sequence that reproduces the problem.
       placeholder: |
         1. Run ...
         2. Open ...
@@ -55,7 +55,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Include OS, Node.js version, browser, and run method.
+      description: Include the OS, Node.js version, browser, and run method.
     validations:
       required: true
 
