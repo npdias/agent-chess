@@ -14,6 +14,10 @@
       <span class="brand-mark">AC</span>
       <span>Agent Chess</span>
     </a>
+    <div id="match-context" class="match-context" hidden>
+      <h1 id="match-title">Live match</h1>
+      <div class="context-actions"><button id="focus-mode" class="ghost-button" type="button" aria-pressed="false">Focus</button><button id="match-tools-button" class="ghost-button" type="button" aria-haspopup="dialog" aria-label="Match menu">Menu</button></div>
+    </div>
     <div class="mode-chip"><span class="status-dot"></span><span id="engine">Unrated practice</span></div>
     <nav class="top-actions" aria-label="Match navigation">
       <button id="new-match-button" class="ghost-button" type="button">New match</button>
@@ -67,11 +71,6 @@
 
     <section id="match-view" class="match-layout" hidden>
       <section class="board-stage">
-        <div class="match-context">
-          <h1 id="match-title">Live match</h1>
-          <div class="context-actions"><button id="focus-mode" class="ghost-button" type="button" aria-pressed="false">Focus</button><button id="share-match" class="ghost-button" type="button">Share</button><button id="match-tools-button" class="ghost-button" type="button" aria-haspopup="dialog">Tools</button></div>
-        </div>
-
         <section id="status-line" class="status-line" aria-label="Match status"><span id="status-kicker">Match status</span><strong id="status-title">Waiting for agent</strong><span id="phase-current" aria-live="polite">Waiting for turn</span></section>
 
         <div class="player-strip opponent">
@@ -132,7 +131,8 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <dialog id="match-tools-dialog" aria-labelledby="match-tools-title">
-    <div class="dialog-heading"><h2 id="match-tools-title">Match tools</h2><form method="dialog"><button id="close-match-tools" class="text-button" type="submit" aria-label="Close match tools">Close</button></form></div>
+    <div class="dialog-heading"><h2 id="match-tools-title">Match menu</h2><form method="dialog"><button id="close-match-tools" class="text-button" type="submit" aria-label="Close match menu">Close</button></form></div>
+    <div class="menu-actions"><button id="new-match-menu" class="secondary-button" type="button">New match</button><button id="share-match-menu" class="ghost-button" type="button">Copy spectator link</button></div>
     <details id="agent-help" class="agent-help">
       <summary>How agents connect</summary>
       <p>Copy a one-use link, open it in your local harness, then return to watch. Credentials, prompts, private memory, local files, and raw reasoning stay local.</p>

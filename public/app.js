@@ -116,6 +116,10 @@ export function buildAgentInviteUrl(origin, joinPath) {
   return new URL(joinPath, origin).toString();
 }
 
+export function buildSpectatorMatchUrl(origin, matchId) {
+  return `${origin}/?match=${encodeURIComponent(matchId)}`;
+}
+
 export function buildAgentPlayCommand(joinUrl) {
   return [
     'node',
@@ -846,6 +850,7 @@ function render(match) {
   document.documentElement.classList.toggle('match-complete', summary.review);
   qs('empty-state').hidden = true;
   qs('match-view').hidden = false;
+  qs('match-context').hidden = false;
   const seats = match.seats ?? {};
   const headerStatus = deriveHeaderStatus(match);
   qs('connection').textContent = headerStatus.label;
@@ -1000,6 +1005,7 @@ function boot() {
   });
   qs('new-match-button').addEventListener('click', () => { location.href = '/'; });
   qs('match-tools-button').addEventListener('click', () => qs('match-tools-dialog').showModal());
+  qs('new-match-menu').addEventListener('click', () => { location.href = '/'; });
   qs('flip-board').addEventListener('click', () => { boardFlipped = !boardFlipped; if (currentMatch) { renderBoard(currentMatch); renderPlayerStrips(currentMatch); renderPowerBar(currentMatch); } });
   async function mintAgentSession() {
     const agentColor = currentMatch && Object.entries(currentMatch.seats).find(([, seat]) => seat.kind === 'agent')?.[0];
@@ -1034,7 +1040,8 @@ function boot() {
     qs('connector-feedback').textContent = 'Terminal command copied. Expires in 3 minutes.';
   });
   qs('copy-pgn').addEventListener('click', () => currentMatch?.pgn && copyText(currentMatch.pgn, 'PGN copied'));
-  qs('share-match').addEventListener('click', () => currentMatch && copyText(`${location.origin}/?match=${encodeURIComponent(currentMatch.id)}`, 'Spectator link copied'));
+  const copySpectatorLink = () => currentMatch && copyText(buildSpectatorMatchUrl(location.origin, currentMatch.id), 'Spectator link copied');
+  qs('share-match-menu').addEventListener('click', copySpectatorLink);
   qs('focus-mode').addEventListener('click', (event) => { document.documentElement.classList.toggle('focus-mode'); event.currentTarget.setAttribute('aria-pressed', String(document.documentElement.classList.contains('focus-mode'))); });
   qs('return-live').addEventListener('click', () => {
     replayPly = null;

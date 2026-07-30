@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildExhibitionPayload, materialPerspective, buildAgentInviteUrl, selectDecisionBrief, deriveBoardTransitions, buildMaterialDisplay } from '../public/app.js';
+import { buildExhibitionPayload, materialPerspective, buildAgentInviteUrl, buildSpectatorMatchUrl, selectDecisionBrief, deriveBoardTransitions, buildMaterialDisplay } from '../public/app.js';
 import * as appModule from '../public/app.js';
 import { spawnSync } from 'node:child_process';
 import { fenToBoard, shellQuote, squareName, deriveMatchSummary, deriveOutcome, groupMoves, deriveTurnPhase, derivePhaseEvidence, formatActivity, selectActivityEntries, buildActivityEntry, buildReviewItem } from '../public/app.js';
@@ -49,6 +49,42 @@ test('builds a local connector command without remote code execution', async () 
   );
   assert.doesNotMatch(command, /\bfetch\b|\bimport\b|--eval|data:text\/javascript/);
   assert.equal(command.split(joinUrl).length - 1, 1);
+});
+
+test('builds an encoded spectator URL for every share control', () => {
+  assert.equal(
+    buildSpectatorMatchUrl('http://127.0.0.1:3000', 'match id/with?reserved'),
+    'http://127.0.0.1:3000/?match=match%20id%2Fwith%3Freserved',
+  );
+});
+
+test('keeps live match context and tools in the persistent topbar', async () => {
+  const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  const topbar = html.match(/<header class="topbar">([\s\S]*?)<\/header>/)?.[1] ?? '';
+  const boardStage = html.match(/<section class="board-stage">([\s\S]*?)<\/section>\s*<aside class="control-rail">/)?.[1] ?? '';
+
+  for (const id of ['match-title', 'match-tools-button']) assert.match(topbar, new RegExp(`id="${id}"`));
+  for (const id of ['match-title', 'match-tools-button']) assert.doesNotMatch(boardStage, new RegExp(`id="${id}"`));
+});
+
+test('keeps new match and spectator sharing in the visible match menu', async () => {
+  const [html, app] = await Promise.all([
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
+  ]);
+  const dialog = html.match(/<dialog id="match-tools-dialog"[\s\S]*?<\/dialog>/)?.[0] ?? '';
+
+  assert.match(html, /id="match-tools-button"[^>]*aria-label="Match menu"[^>]*>Menu</);
+  for (const id of ['new-match-menu', 'share-match-menu']) assert.match(dialog, new RegExp(`id="${id}"`));
+  assert.match(app, /new-match-menu.*location\.href = '\/'/s);
+  assert.match(app, /share-match-menu.*copySpectatorLink/s);
+});
+
+test('keeps topbar tools available in desktop focus mode', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+
+  assert.match(css, /\.focus-mode \.control-rail\s*\{[^}]*display:\s*none/);
+  assert.doesNotMatch(css, /\.focus-mode \.topbar,\s*\.focus-mode \.control-rail\s*\{[^}]*display:\s*none/);
 });
 
 
@@ -345,7 +381,7 @@ test('defines generic exhibition controls without capability leakage', async () 
   assert.match(app, /Agent plays as/);
   assert.match(html, /Unrated exhibition/);
   assert.match(html, /id="promotion-dialog"/);
-  assert.match(html, /id="share-match"/);
+  assert.match(html, /id="share-match-menu"/);
   assert.match(html, /id="return-live"/);
   assert.match(html, /id="focus-mode"/);
   assert.match(html, /id="lifecycle-action"/);
@@ -540,7 +576,7 @@ test('uses spectator-first hierarchy while preserving match controls', async () 
   assert.doesNotMatch(html, /id="connector-how"/);
   assert.match(html, /id="copy-agent-link"/);
   assert.match(html, /id="copy-command"/);
-  for (const id of ['lifecycle-action', 'download-match', 'share-match', 'focus-mode', 'copy-pgn', 'moves']) assert.match(html, new RegExp(`id="${id}"`));
+  for (const id of ['lifecycle-action', 'download-match', 'share-match-menu', 'focus-mode', 'copy-pgn', 'moves']) assert.match(html, new RegExp(`id="${id}"`));
   assert.match(app, /buildAgentInviteUrl\(location\.origin, session\.joinPath\)/);
   assert.match(app, /copy-agent-prompt.*addEventListener/s);
   assert.match(app, /buildAgentHandoffPrompt\(inviteUrl\)/);
@@ -563,9 +599,10 @@ test('keeps match tools available in focus mode', async () => {
   assert.doesNotMatch(css, /\.focus-mode[^}]*#match-tools-button/);
 });
 
-test('centers only the board stack in focus mode without reserving a hidden rail', async () => {
+test('centers board stack in focus mode while retaining topbar tools', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
-  assert.match(css, /\.focus-mode \.topbar,\s*\.focus-mode \.control-rail\s*\{[^}]*display:\s*none/);
+  assert.match(css, /\.focus-mode \.control-rail\s*\{[^}]*display:\s*none/);
+  assert.doesNotMatch(css, /\.focus-mode \.topbar,\s*\.focus-mode \.control-rail\s*\{[^}]*display:\s*none/);
   assert.match(css, /@media \(min-width:\s*1021px\)[\s\S]*?\.focus-mode \.match-layout\s*\{[^}]*grid-template-columns:\s*var\(--live-board-size\)[^}]*justify-content:\s*center/);
   assert.doesNotMatch(css, /\.focus-mode \.match-layout\s*\{[^}]*minmax\(280px,\s*360px\)/);
 });
@@ -614,7 +651,7 @@ test('moves preserved secondary controls into one internally scrolling Match too
     readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
   ]);
   const dialog = html.match(/<dialog id="match-tools-dialog"[\s\S]*?<\/dialog>/)?.[0] ?? '';
-  for (const id of ['steering-form', 'activity', 'copy-pgn', 'download-match', 'lifecycle-action', 'fen', 'copy-command']) assert.match(dialog, new RegExp(`id="${id}"`));
+  for (const id of ['new-match-menu', 'share-match-menu', 'steering-form', 'activity', 'copy-pgn', 'download-match', 'lifecycle-action', 'fen', 'copy-command']) assert.match(dialog, new RegExp(`id="${id}"`));
   assert.match(dialog, /id="close-match-tools"/);
   assert.match(html, /How agents connect/);
   assert.match(app, /match-tools-button.*showModal/s);
@@ -888,7 +925,7 @@ test('keeps every visible desktop footer child within the 24px footer', async ()
 test('keeps every mobile match and dialog action at least 44px tall', async () => {
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
   const mobile = css.match(/@media \(max-width: 720px\)\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
-  for (const selector of ['.context-actions button', '.dialog-heading button', '.tool-actions button', '.terminal-fallback button', '.promotion-actions button', '#promotion-dialog > form > .text-button', '#match-tools-dialog summary', '#new-match-button', '.move-row button']) {
+  for (const selector of ['.context-actions button', '.dialog-heading button', '.menu-actions button', '.tool-actions button', '.terminal-fallback button', '.promotion-actions button', '#promotion-dialog > form > .text-button', '#match-tools-dialog summary', '#new-match-button', '.move-row button']) {
     assert.match(mobile, new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.match(mobile, /min-height:\s*44px/);
