@@ -59,8 +59,8 @@ h1, h2, h3, p { margin-top: 0; }
 .form-note { color: var(--muted-2); font-size: .72rem; text-align: center; margin-bottom: 0; }
 .match-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); gap: 20px; align-items: start; }
 .board-stage { min-width: 0; }
-.match-context { width: min(100%, 820px); margin: 0 auto 4px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
-.match-context h1 { margin-bottom: 0; font-size: 1.55rem; letter-spacing: -.02em; }
+.match-context { min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.match-context h1 { min-width: 0; margin-bottom: 0; font-size: 1.15rem; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .context-actions { display: flex; align-items: center; gap: 6px; }
 .status-line { width: min(100%, 820px); margin: 10px auto 4px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); font-size: .76rem; }
 .status-line span:first-child { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: .66rem; }
@@ -201,9 +201,14 @@ dialog::backdrop { background: #0009; }
 .terminal-fallback button { margin-top: 10px; }
 .terminal-fallback code { display: block; margin-top: 8px; overflow-wrap: anywhere; color: #cbe5ac; }
 .tool-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 14px 16px; }
+.menu-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.menu-actions button { min-height: 44px; }
 .promotion-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 16px 0; }
 .promotion-actions button { padding: 10px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--text); background: var(--surface-raised); }
-.focus-mode .topbar, .focus-mode .control-rail { display: none; }
+.match-active .topbar { grid-template-columns: auto minmax(0, 1fr) auto; }
+.match-active .mode-chip { display: none; }
+.match-active #new-match-button { display: none; }
+.focus-mode .control-rail { display: none; }
 .focus-mode .match-layout { grid-template-columns: minmax(0, 1fr); justify-content: center; }
 @media (min-width: 1021px) {
   .match-active, .match-active body { height: 100dvh; overflow: hidden; }
@@ -214,8 +219,7 @@ dialog::backdrop { background: #0009; }
   .match-layout { --desktop-fixed-chrome: 250px; --live-board-size: min(820px, calc(100dvh - var(--desktop-fixed-chrome)), calc(100vw - 492px)); grid-template-columns: var(--live-board-size) minmax(360px, 440px); gap: 16px; justify-content: center; }
   .focus-mode .match-layout { grid-template-columns: var(--live-board-size); justify-content: center; }
   .board-stage { width: var(--live-board-size); }
-  .match-context { min-height: 30px; margin-bottom: 0; }
-  .match-context h1 { font-size: 1.25rem; line-height: 1.05; }
+  .match-context h1 { font-size: 1rem; line-height: 1.05; }
   .status-line, .player-strip, .board-footer { width: 100%; }
   .status-line { margin: 3px auto 1px; padding: 5px 8px; }
   .player-strip { min-height: 40px; padding: 2px 0; }
@@ -252,10 +256,17 @@ dialog::backdrop { background: #0009; }
   .top-actions { min-width: 0; gap: 4px; }
   .connection-badge { min-width: 0; padding-inline: 8px; }
   .app-shell { padding: 12px; }
-  .setup-shell { grid-template-columns: 1fr; align-content: start; padding-top: 40px; }
-  .setup-copy h1 { font-size: 3rem; }
-  .match-context { align-items: flex-start; }
-  .context-actions { flex-direction: column; align-items: flex-end; }
+  .setup-shell { grid-template-columns: 1fr; align-content: start; gap: 32px; padding-top: 24px; }
+  .setup-copy h1 { font-size: clamp(2.5rem, 12vw, 3rem); margin-bottom: 16px; }
+  .setup-copy > p:not(.eyebrow) { line-height: 1.55; }
+  .feature-strip { margin-top: 18px; }
+  .match-active .topbar { grid-template-columns: auto minmax(0, 1fr); }
+  .match-active .top-actions { display: none; }
+  .match-context { gap: 4px; }
+  .match-context h1 { font-size: .95rem; }
+  .context-actions { flex-direction: row; align-items: center; }
+  .context-actions #focus-mode { display: none; }
+  .context-actions #match-tools-button { min-width: 44px; }
   .control-rail { grid-template-columns: minmax(0, 1fr); }
   .post-match { grid-column: auto; }
   .connector-card, .connector-actions { min-width: 0; }
@@ -268,9 +279,12 @@ dialog::backdrop { background: #0009; }
   .clock { min-width: 0; padding: 8px 7px; font-size: .78rem; }
   .board-footer { max-height: none; min-height: 44px; }
   .board-footer .text-button { height: 44px; min-height: 44px; padding: 0 10px; line-height: normal; }
-  .context-actions button, .dialog-heading button, .tool-actions button, .terminal-fallback button, .promotion-actions button, #promotion-dialog > form > .text-button, #match-tools-dialog summary, #new-match-button, .move-row button, .move-follow-button { min-height: 44px; }
+  .context-actions button, .dialog-heading button, .menu-actions button, .tool-actions button, .terminal-fallback button, .promotion-actions button, #promotion-dialog > form > .text-button, #match-tools-dialog summary, #new-match-button, .move-row button, .move-follow-button { min-height: 44px; }
+  .board-shell { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 4px; align-items: stretch; }
+  .board-shell .board { grid-column: 2; }
+  .power-bar { position: relative; grid-column: 1; left: auto; top: auto; width: 12px; height: auto; align-self: stretch; }
   .piece { font-size: clamp(1.8rem, 11vw, 4rem); }
-  .power-score { left: 2px; transform: translateY(-50%); min-width: 0; padding: 2px 1px; border: 0; background: transparent; color: #f2f4f1; font-size: .56rem; writing-mode: vertical-rl; }
+  .power-score { left: 50%; transform: translate(-50%, -50%); min-width: 0; padding: 2px 1px; border: 0; background: transparent; color: #f2f4f1; font-size: .56rem; writing-mode: vertical-rl; }
   .connector-actions { display: grid; grid-template-columns: 1fr; }
   .connector-actions button { width: 100%; min-height: 44px; }
   .field-row { grid-template-columns: 1fr; }
