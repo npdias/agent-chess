@@ -214,6 +214,27 @@ test('paces only public exhibitions and caps untrusted delay input', () => {
   assert.equal(normalizeTurnPaceMs({ mode: 'exhibition', visibility: 'public' }, -1), 0);
 });
 
+test('sends observer heartbeats without fabricating game activity', async () => {
+  const server = createAgentChessServer({ stockfishFactory: async () => new FakeStockfish(), observerHeartbeatMs: 20 });
+  const address = await server.start(0);
+  try {
+    const created = await createMatch(address, {
+      mode: 'exhibition', visibility: 'public',
+      seats: { white: { kind: 'human', name: 'Human' }, black: { kind: 'engine', name: 'Engine' } },
+    });
+    const observer = new WebSocket(`${address.wsUrl}/events?matchId=${created.matchId}`);
+    const messages = collectMessages(observer);
+    await new Promise((resolve, reject) => { observer.once('open', resolve); observer.once('error', reject); });
+    const heartbeat = await messages.next((message) => message.type === 'match.heartbeat');
+    assert.match(heartbeat.at, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(heartbeat.matchId, created.matchId);
+    assert.equal((await getMatch(address, created.matchId)).activity.length, 1);
+    observer.close();
+  } finally {
+    await server.stop();
+  }
+});
+
 async function runReferenceConnectorFailure(address, created, command) {
   const observer = new WebSocket(`${address.wsUrl}/events?matchId=${created.matchId}`);
   const messages = collectMessages(observer);
@@ -910,7 +931,7 @@ test('agent decision deadline starts when active turn reaches its first transpor
     assert.equal(turn.deadlineMs, 80);
     assert.ok(new Date(turn.deadline).getTime() > Date.now());
     const ended = await messages.next((message) => message.type === 'game.end');
-    assert.equal(ended.failureCode, 'AGENT_FAILURE');
+    assert.equal(ended.failureCode, 'AGENT_DECISION_TIMEOUT');
     socket.close();
   } finally {
     await server.stop();
@@ -998,12 +1019,12 @@ test('sends protocol game.end once for natural completion, resignation, and deci
     const deadlineEnd = await deadlineAgent.messages.next((message) => message.type === 'game.end');
     assert.equal(deadlineEnd.result, '*');
     assert.deepEqual({ status: deadlineEnd.status, termination: deadlineEnd.termination, failureCode: deadlineEnd.failureCode }, {
-      status: 'failed', termination: 'failure', failureCode: 'AGENT_FAILURE',
+      status: 'failed', termination: 'failure', failureCode: 'AGENT_DECISION_TIMEOUT',
     });
     const deadlineError = await deadlineAgent.messages.next((message) => message.type === 'error');
-    assert.equal(deadlineError.code, 'AGENT_FAILURE');
+    assert.equal(deadlineError.code, 'AGENT_DECISION_TIMEOUT');
     const deadlineEvents = deadlineAgent.messages.ordered();
-    assert.ok(deadlineEvents.findIndex((message) => message.type === 'error' && message.code === 'AGENT_FAILURE')
+    assert.ok(deadlineEvents.findIndex((message) => message.type === 'error' && message.code === 'AGENT_DECISION_TIMEOUT')
       < deadlineEvents.findIndex((message) => message.type === 'game.end'));
     assert.doesNotMatch(JSON.stringify([deadlineEnd, deadlineError]), /Decision deadline exceeded/);
     assert.equal(deadlineAgent.messages.count((message) => message.type === 'game.end'), 1);
@@ -1061,7 +1082,7 @@ test('reference connector exits nonzero after stable decision-deadline failure',
     assert.doesNotMatch(`${stdout}\n${stderr}`, /Decision deadline exceeded/);
     const snapshot = await getMatch(address, created.matchId);
     assert.deepEqual({ status: snapshot.status, termination: snapshot.termination, failureCode: snapshot.failureCode }, {
-      status: 'failed', termination: 'failure', failureCode: 'AGENT_FAILURE',
+      status: 'failed', termination: 'failure', failureCode: 'AGENT_DECISION_TIMEOUT',
     });
   } finally {
     await server.stop();

@@ -27,6 +27,7 @@ export const MESSAGE_TYPES = Object.freeze({
   OPPONENT_MOVE: 'opponent.move',
   GAME_END: 'game.end',
   STATE: 'match.state',
+  HEARTBEAT: 'match.heartbeat',
   TRACE_PUBLISH: 'trace.publish',
   ERROR: 'error',
 });

@@ -4,7 +4,7 @@ import { parsePublicTrace } from './protocol.js';
 import { normalizeMatchConfig, publicSeat } from './seats.js';
 
 const UCI_PATTERN = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
-const FAILURE_CODES = new Set(['AGENT_FAILURE', 'ENGINE_FAILURE', 'MATCH_FAILURE', 'SYSTEM_FAILURE']);
+const FAILURE_CODES = new Set(['AGENT_FAILURE', 'AGENT_DECISION_TIMEOUT', 'ENGINE_FAILURE', 'MATCH_FAILURE', 'SYSTEM_FAILURE']);
 const MAX_ACTIVITY_ENTRIES = 500;
 const MAX_PROBES_PER_TURN = 128;
 const MAX_STATUS_PER_TURN = 32;

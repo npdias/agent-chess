@@ -13,6 +13,8 @@ const deriveBalanceOfPower = appModule.deriveBalanceOfPower ?? (() => ({}));
 const hasAgentJoined = appModule.hasAgentJoined ?? (() => false);
 const deriveConnectorStatus = appModule.deriveConnectorStatus ?? (() => ({}));
 const deriveHeaderStatus = appModule.deriveHeaderStatus ?? (() => ({}));
+const deriveTurnTiming = appModule.deriveTurnTiming ?? (() => ({}));
+const deriveLiveStatus = appModule.deriveLiveStatus ?? (() => ({}));
 const buildAgentPlayCommand = appModule.buildAgentPlayCommand ?? (() => '');
 const selectThoughtTicker = appModule.selectThoughtTicker ?? (() => []);
 const buildAgentHandoffPrompt = appModule.buildAgentHandoffPrompt ?? (() => '');
@@ -184,6 +186,62 @@ test('binds replay selection to individual native SAN buttons', async () => {
 test('derives verified turn phase or truthful waiting fallback', () => {
   assert.equal(deriveTurnPhase({ activity: [{ phase: 'probe' }] }).key, 'probe');
   assert.equal(deriveTurnPhase({ activity: [] }).label, 'Waiting for turn');
+});
+
+test('derives current and completed turn durations only from recorded turn boundaries', () => {
+  const timing = deriveTurnTiming({
+    status: 'active',
+    activeTurn: { turnId: 'turn-2' },
+    activity: [
+      { type: 'turn.start', turnId: 'turn-1', at: '2026-08-05T12:00:00.000Z' },
+      { type: 'move.submit', turnId: 'turn-1', at: '2026-08-05T12:00:04.200Z' },
+      { type: 'turn.start', turnId: 'turn-2', at: '2026-08-05T12:00:10.000Z' },
+    ],
+  }, Date.parse('2026-08-05T12:00:16.800Z'));
+
+  assert.deepEqual(timing, {
+    currentMs: 6800,
+    lastMs: 4200,
+    currentLabel: 'Current turn 6.8s',
+    lastLabel: 'Last turn 4.2s',
+  });
+  assert.deepEqual(deriveTurnTiming({ activity: [{ type: 'turn.start', turnId: 'missing-time' }] }, Date.now()), {
+    currentMs: null, lastMs: null, currentLabel: 'Current turn time unavailable', lastLabel: 'Last turn time unavailable',
+  });
+});
+
+test('keeps current-turn timing visible at desktop and narrow widths', async () => {
+  const [html, css] = await Promise.all([
+    readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/styles.css', import.meta.url), 'utf8'),
+  ]);
+  assert.match(html, /id="turn-timing"[^>]*aria-live="off"/);
+  assert.doesNotMatch(css, /@media \(min-width:\s*1021px\)[\s\S]*?#turn-timing\s*\{[^}]*display:\s*none/);
+});
+
+test('renders only factual stalled, transport, and terminal problem states', () => {
+  const liveMatch = {
+    status: 'active', connected: true,
+    seats: { white: { kind: 'agent', name: 'Luna' }, black: { kind: 'engine', name: 'Computer' } },
+    game: { turn: 'white' }, activeTurn: { turnId: 'turn-1' },
+    activity: [{ type: 'turn.start', turnId: 'turn-1', at: '2026-08-05T12:00:00.000Z' }],
+  };
+  const now = Date.parse('2026-08-05T12:00:31.000Z');
+  assert.deepEqual(deriveLiveStatus(liveMatch, { now, observer: { state: 'connected', lastSignalAt: now } }), {
+    state: 'stale', title: 'Agent status not confirmed', detail: 'No public activity for 31s. Connection remains open.',
+  });
+  assert.deepEqual(deriveLiveStatus({ ...liveMatch, connected: false, agentSessionActive: true }, { now, observer: { state: 'connected', lastSignalAt: now } }), {
+    state: 'stale', title: 'Agent status not confirmed', detail: 'No public activity for 31s. Agent session remains active.',
+  });
+  assert.deepEqual(deriveLiveStatus(liveMatch, { now, observer: { state: 'disconnected', lastSignalAt: now } }), {
+    state: 'disconnected', title: 'Live updates disconnected', detail: 'Last known game state is shown.',
+  });
+  assert.deepEqual(deriveLiveStatus({ ...liveMatch, status: 'failed', failureCode: 'AGENT_DECISION_TIMEOUT' }, { now, observer: {} }), {
+    state: 'failed', title: 'Agent decision timed out', detail: 'Server ended this match after its decision deadline.',
+  });
+  assert.deepEqual(deriveLiveStatus({ ...liveMatch, status: 'aborted', activity: [{ type: 'match.abort', summary: 'white aborted' }] }, { now, observer: {} }), {
+    state: 'aborted', title: 'Match aborted', detail: 'white aborted',
+  });
 });
 
 test('labels completed matches without showing a live turn phase', () => {
@@ -775,7 +833,7 @@ test('uses explicit turn-owner states without ambiguous Waiting labels', async (
     readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
   ]);
   assert.match(app, /derivePlayerState\(match, seat\.color, ownedControllerColor\)/);
-  assert.match(app, /deriveTurnOwnerStatus\(match, ownedControllerColor\)/);
+  assert.match(app, /deriveLiveStatus\(match, \{ observer: liveObserver \}\)/);
   assert.doesNotMatch(app, /\? 'Thinking' : 'Waiting'/);
   assert.doesNotMatch(app, /\? 'To move' : 'No clock'/);
   assert.doesNotMatch(html, /id="(?:top|bottom)-state" class="clock">No clock/);
