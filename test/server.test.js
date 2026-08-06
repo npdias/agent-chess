@@ -490,10 +490,16 @@ test('durable REST agent session claims an invitation then submits an idempotent
     const claimedSnapshot = await getMatch(address, created.matchId);
     assert.equal(claimedSnapshot.connected, false);
     assert.equal(claimedSnapshot.agentSessionActive, true);
+    assert.equal(claimedSnapshot.activity.some((entry) => entry.type === 'agent.turn.ready'), false);
     const auth = { authorization: `Bearer ${sessionToken}` };
     const joined = await fetch(`${address.httpUrl}/api/agent/match`, { headers: auth });
     assert.equal(joined.status, 200);
     const { turn } = await joined.json();
+    const deliveredSnapshot = await getMatch(address, created.matchId);
+    assert.deepEqual(
+      deliveredSnapshot.activity.find((entry) => entry.type === 'agent.turn.ready')?.turnId,
+      turn.turnId,
+    );
     const legal = await fetch(`${address.httpUrl}/api/agent/legal-moves?turnId=${turn.turnId}`, { headers: auth });
     assert.equal(legal.status, 200);
     assert.ok((await legal.json()).moves.some((move) => move.uci === 'e2e4'));
@@ -895,6 +901,7 @@ test('agent reconnect preserves original active-turn deadline', async () => {
     await new Promise((resolve, reject) => { first.once('open', resolve); first.once('error', reject); });
     const firstTurn = await firstMessages.next((message) => message.type === 'turn.start');
     first.close();
+    await once(first, 'close');
     const secondTicket = await exchange();
     const second = new WebSocket(`${address.wsUrl}${secondTicket.wsPath}`);
     const secondMessages = collectMessages(second);
@@ -902,6 +909,9 @@ test('agent reconnect preserves original active-turn deadline', async () => {
     const replay = await secondMessages.next((message) => message.type === 'turn.start');
     assert.equal(replay.turnId, firstTurn.turnId);
     assert.equal(replay.deadline, firstTurn.deadline);
+    const reconnectSnapshot = await getMatch(address, created.matchId, created.capabilities.white);
+    assert.equal(reconnectSnapshot.activity.filter((entry) => entry.type === 'agent.disconnect' && entry.turnId === firstTurn.turnId).length, 1);
+    assert.equal(reconnectSnapshot.activity.filter((entry) => entry.type === 'agent.turn.ready' && entry.turnId === firstTurn.turnId).length, 2);
     second.close();
   } finally {
     await server.stop();

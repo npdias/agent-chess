@@ -64,6 +64,9 @@ const OBSERVER_HEARTBEAT_STALE_MS = 15_000;
 
 export function deriveTurnPhase(match = {}) {
   if (match.game?.gameOver || ['completed', 'aborted', 'failed'].includes(match.status)) return { key: 'complete', label: 'Match complete' };
+  if (activeTurnSeat(match).kind === 'agent' && !currentTurnEntries(match).some((entry) => entry?.type === 'agent.turn.ready')) {
+    return { key: 'waiting', label: 'Waiting for agent' };
+  }
   const entries = activeTurnActivity(match);
   const entry = [...entries].reverse().find((item) => TURN_PHASES.some((phase) => (
     phase.key === (PHASE_ALIASES[item?.phase] ?? item?.phase)
@@ -107,6 +110,31 @@ function currentTurnEntries(match = {}) {
   return turnId ? (match.activity ?? []).filter((entry) => entry?.turnId === turnId) : [];
 }
 
+function activeTurnSeat(match = {}) {
+  return match.seats?.[match.activeTurn?.activeColor ?? match.game?.turn] ?? {};
+}
+
+function agentTurnElapsed(entries, endAt, connectedAtEnd) {
+  let elapsed = 0;
+  let segmentStartedAt = null;
+  let delivered = false;
+  for (const entry of [...entries].sort((left, right) => timestampMs(left.at) - timestampMs(right.at))) {
+    const at = timestampMs(entry.at);
+    if (at === null || at > endAt) continue;
+    if (entry.type === 'agent.turn.ready') {
+      delivered = true;
+      if (segmentStartedAt === null) segmentStartedAt = at;
+      continue;
+    }
+    if (entry.type === 'agent.disconnect' && segmentStartedAt !== null) {
+      elapsed += Math.max(0, at - segmentStartedAt);
+      segmentStartedAt = null;
+    }
+  }
+  if (segmentStartedAt !== null && connectedAtEnd) elapsed += Math.max(0, endAt - segmentStartedAt);
+  return delivered ? elapsed : null;
+}
+
 export function deriveTurnTiming(match = {}, now = Date.now()) {
   const activity = match.activity ?? [];
   const currentTurnId = activeTurnId(match);
@@ -114,18 +142,33 @@ export function deriveTurnTiming(match = {}, now = Date.now()) {
     ? [...activity].reverse().find((entry) => entry?.type === 'turn.start' && entry.turnId === currentTurnId)
     : null;
   const currentStartedAt = timestampMs(currentStart?.at);
-  const currentMs = !terminalMatch(match) && currentStartedAt !== null ? Math.max(0, now - currentStartedAt) : null;
+  const activeSeat = activeTurnSeat(match);
+  const agentTurn = activeSeat.kind === 'agent';
+  const agentAvailable = Boolean(match.connected || match.agentSessionActive);
+  const currentEntries = currentTurnEntries(match);
+  const currentMs = terminalMatch(match) || currentStartedAt === null ? null
+    : agentTurn ? agentTurnElapsed(currentEntries, now, agentAvailable)
+      : Math.max(0, now - currentStartedAt);
   const completedMove = [...activity].reverse().find((entry) => entry?.type === 'move.submit' && timestampMs(entry.at) !== null);
   const completedStart = completedMove
     ? [...activity].reverse().find((entry) => entry?.type === 'turn.start' && entry.turnId === completedMove.turnId)
     : null;
   const completedStartedAt = timestampMs(completedStart?.at);
   const completedAt = timestampMs(completedMove?.at);
-  const lastMs = completedStartedAt !== null && completedAt !== null ? Math.max(0, completedAt - completedStartedAt) : null;
+  const completedEntries = completedMove?.turnId
+    ? activity.filter((entry) => entry?.turnId === completedMove.turnId)
+    : [];
+  const completedAgentTurn = completedEntries.some((entry) => entry?.type === 'agent.turn.ready');
+  const lastMs = completedStartedAt === null || completedAt === null ? null
+    : completedAgentTurn ? agentTurnElapsed(completedEntries, completedAt, true)
+      : Math.max(0, completedAt - completedStartedAt);
+  const currentLabel = currentMs === null
+    ? agentTurn && !agentAvailable ? 'Waiting for agent connection' : 'Current turn time unavailable'
+    : agentTurn && !agentAvailable ? `Agent disconnected · ${formatTurnDuration(currentMs)} elapsed` : `Current turn ${formatTurnDuration(currentMs)}`;
   return {
     currentMs,
     lastMs,
-    currentLabel: currentMs === null ? 'Current turn time unavailable' : `Current turn ${formatTurnDuration(currentMs)}`,
+    currentLabel,
     lastLabel: lastMs === null ? 'Last turn time unavailable' : `Last turn ${formatTurnDuration(lastMs)}`,
   };
 }
@@ -151,8 +194,15 @@ export function deriveLiveStatus(match = {}, { now = Date.now(), observer = {} }
   }
   const owner = deriveTurnOwnerStatus(match, null);
   const activeSeat = match.seats?.[match.game?.turn] ?? {};
+  const turnDelivered = currentTurnEntries(match).some((entry) => entry?.type === 'agent.turn.ready');
+  if (activeSeat.kind === 'agent' && !turnDelivered) {
+    if (!match.connected && !match.agentSessionActive) {
+      return { state: 'offline', title: `Waiting on ${activeSeat.name ?? 'agent'}`, detail: 'Invite remains unclaimed. Timer starts after agent receives this turn.' };
+    }
+    return { state: 'offline', title: `Waiting on ${activeSeat.name ?? 'agent'}`, detail: 'Agent session is active; server has not delivered this turn yet.' };
+  }
   if (activeSeat.kind === 'agent' && !match.connected && !match.agentSessionActive) {
-    return { state: 'offline', title: `Waiting on ${activeSeat.name ?? 'agent'}`, detail: 'Agent connection is not active.' };
+    return { state: 'offline', title: `${activeSeat.name ?? 'Agent'} disconnected`, detail: 'Turn timer is paused until agent reconnects and receives this turn.' };
   }
   const latestActivity = [...currentTurnEntries(match)].reverse().find((entry) => timestampMs(entry.at) !== null);
   const latestActivityAt = timestampMs(latestActivity?.at);
@@ -169,6 +219,7 @@ export function formatActivity(entry = {}) {
   const agent = source === 'agent';
   const typeLabels = {
     'turn.start': 'Position received',
+    'agent.turn.ready': 'Agent turn ready',
     'moves.list': 'Piece moves checked',
     'moves.list_all': 'Legal moves checked',
     'history.list': 'History checked',
@@ -361,6 +412,8 @@ export function deriveTurnOwnerStatus(match = {}, ownedColor = null) {
   const seat = match.seats?.[activeColor] ?? {};
   const name = seat.name ?? (activeColor ? `${activeColor[0].toUpperCase()}${activeColor.slice(1)}` : 'Player');
   if (seat.kind === 'agent') {
+    const delivered = currentTurnEntries(match).some((entry) => entry?.type === 'agent.turn.ready');
+    if (!delivered) return { headline: `Waiting on ${name}`, detail: match.connected || match.agentSessionActive ? 'Waiting for turn delivery' : 'Agent needs to connect', state: 'waiting', activeColor };
     return match.connected || match.agentSessionActive
       ? { headline: `${name} is thinking`, detail: deriveTurnPhase(match).label, state: 'thinking', activeColor }
       : { headline: `Waiting on ${name}`, detail: 'Agent needs to connect', state: 'waiting', activeColor };
@@ -379,7 +432,10 @@ export function derivePlayerState(match = {}, color, ownedColor = null) {
   }
   if (match.game?.turn !== color) return 'Watching';
   const seat = match.seats?.[color] ?? {};
-  if (seat.kind === 'agent') return match.connected || match.agentSessionActive ? 'Thinking' : 'Connecting';
+  if (seat.kind === 'agent') {
+    if (!currentTurnEntries(match).some((entry) => entry?.type === 'agent.turn.ready')) return 'Waiting';
+    return match.connected || match.agentSessionActive ? 'Thinking' : 'Connecting';
+  }
   if (seat.kind === 'engine') return 'Moving';
   if (seat.kind === 'human') return color === ownedColor ? 'Your move' : 'To move';
   return 'To move';

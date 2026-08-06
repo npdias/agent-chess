@@ -210,6 +210,44 @@ test('derives current and completed turn durations only from recorded turn bound
   });
 });
 
+test('starts an agent turn timer only after server-confirmed turn delivery, then pauses across disconnects', () => {
+  const base = {
+    status: 'active',
+    connected: false,
+    agentSessionActive: false,
+    seats: { white: { kind: 'agent', name: 'Luna' }, black: { kind: 'engine', name: 'Computer' } },
+    game: { turn: 'white' },
+    activeTurn: { turnId: 'turn-1', seatKind: 'agent' },
+    activity: [{ type: 'turn.start', turnId: 'turn-1', at: '2026-08-05T12:00:00.000Z' }],
+  };
+
+  assert.deepEqual(deriveTurnTiming(base, Date.parse('2026-08-05T12:00:09.000Z')), {
+    currentMs: null,
+    lastMs: null,
+    currentLabel: 'Waiting for agent connection',
+    lastLabel: 'Last turn time unavailable',
+  });
+  assert.deepEqual(deriveTurnPhase(base), { key: 'waiting', label: 'Waiting for agent' });
+  assert.equal(selectDecisionBrief(base).intent, 'No public agent decision yet.');
+
+  const connected = {
+    ...base,
+    connected: true,
+    activity: [...base.activity, { type: 'agent.turn.ready', turnId: 'turn-1', at: '2026-08-05T12:00:10.000Z' }],
+  };
+  assert.equal(deriveTurnTiming(connected, Date.parse('2026-08-05T12:00:16.000Z')).currentMs, 6000);
+
+  const reconnected = {
+    ...connected,
+    activity: [...connected.activity,
+      { type: 'agent.disconnect', turnId: 'turn-1', at: '2026-08-05T12:00:17.000Z' },
+      { type: 'agent.connect', turnId: 'turn-1', at: '2026-08-05T12:00:22.000Z' },
+      { type: 'agent.turn.ready', turnId: 'turn-1', at: '2026-08-05T12:00:23.000Z' },
+    ],
+  };
+  assert.equal(deriveTurnTiming(reconnected, Date.parse('2026-08-05T12:00:27.000Z')).currentMs, 11_000);
+});
+
 test('keeps current-turn timing visible at desktop and narrow widths', async () => {
   const [html, css] = await Promise.all([
     readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
@@ -224,7 +262,10 @@ test('renders only factual stalled, transport, and terminal problem states', () 
     status: 'active', connected: true,
     seats: { white: { kind: 'agent', name: 'Luna' }, black: { kind: 'engine', name: 'Computer' } },
     game: { turn: 'white' }, activeTurn: { turnId: 'turn-1' },
-    activity: [{ type: 'turn.start', turnId: 'turn-1', at: '2026-08-05T12:00:00.000Z' }],
+    activity: [
+      { type: 'turn.start', turnId: 'turn-1', at: '2026-08-05T12:00:00.000Z' },
+      { type: 'agent.turn.ready', turnId: 'turn-1', at: '2026-08-05T12:00:00.000Z' },
+    ],
   };
   const now = Date.parse('2026-08-05T12:00:31.000Z');
   assert.deepEqual(deriveLiveStatus(liveMatch, { now, observer: { state: 'connected', lastSignalAt: now } }), {
@@ -811,19 +852,24 @@ test('names exactly who owns the current turn', () => {
   assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: false, seats, game: { turn: 'white' }, activity: [] }), {
     headline: 'Waiting on Luna', detail: 'Agent needs to connect', state: 'waiting', activeColor: 'white',
   });
-  assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: true, seats, game: { turn: 'white' }, activity: [{ phase: 'evaluate' }] }), {
+  const deliveredActivity = [
+    { type: 'turn.start', turnId: 'turn-1' },
+    { type: 'agent.turn.ready', turnId: 'turn-1' },
+    { phase: 'evaluate', turnId: 'turn-1' },
+  ];
+  assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: true, seats, game: { turn: 'white' }, activity: deliveredActivity }), {
     headline: 'Luna is thinking', detail: 'Evaluate', state: 'thinking', activeColor: 'white',
   });
-  assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: false, agentSessionActive: true, seats, game: { turn: 'white' }, activity: [{ phase: 'evaluate' }] }), {
+  assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: false, agentSessionActive: true, seats, game: { turn: 'white' }, activity: deliveredActivity }), {
     headline: 'Luna is thinking', detail: 'Evaluate', state: 'thinking', activeColor: 'white',
   });
   assert.deepEqual(deriveTurnOwnerStatus({ status: 'active', connected: true, seats, game: { turn: 'black' }, activity: [] }), {
     headline: 'Computer is moving', detail: 'Engine turn', state: 'moving', activeColor: 'black',
   });
-  assert.equal(derivePlayerState({ status: 'active', connected: true, seats, game: { turn: 'white' } }, 'white'), 'Thinking');
-  assert.equal(derivePlayerState({ status: 'active', connected: false, agentSessionActive: true, seats, game: { turn: 'white' } }, 'white'), 'Thinking');
+  assert.equal(derivePlayerState({ status: 'active', connected: true, seats, game: { turn: 'white' }, activity: deliveredActivity }, 'white'), 'Thinking');
+  assert.equal(derivePlayerState({ status: 'active', connected: false, agentSessionActive: true, seats, game: { turn: 'white' }, activity: deliveredActivity }, 'white'), 'Thinking');
   assert.equal(derivePlayerState({ status: 'active', connected: true, seats, game: { turn: 'white' } }, 'black'), 'Watching');
-  assert.equal(derivePlayerState({ status: 'active', connected: false, seats, game: { turn: 'white' } }, 'white'), 'Connecting');
+  assert.equal(derivePlayerState({ status: 'active', connected: false, seats, game: { turn: 'white' } }, 'white'), 'Waiting');
   assert.equal(derivePlayerState({ status: 'completed', connected: false, seats, game: { turn: 'black', gameOver: true } }, 'white'), 'Finished');
 });
 

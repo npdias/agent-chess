@@ -559,7 +559,9 @@ test('strips decision details from precommit trace publication', () => {
 
 test('records public connector lifecycle without credentials or transport details', () => {
   const match = publicAgentMatch();
+  const turn = match.createTurnPayload();
   const connected = match.recordConnectorState('connected');
+  const ready = match.recordAgentTurnReady(turn.turnId);
   const disconnected = match.recordConnectorState('disconnected');
 
   assert.deepEqual(
@@ -571,4 +573,10 @@ test('records public connector lifecycle without credentials or transport detail
   );
   assert.equal(JSON.stringify(match.snapshot().activity).includes('ticket'), false);
   assert.equal(JSON.stringify(match.snapshot().activity).includes('socket'), false);
+  assert.deepEqual(
+    { type: ready.type, turnId: ready.turnId, summary: ready.summary },
+    { type: 'agent.turn.ready', turnId: turn.turnId, summary: 'Agent received turn' },
+  );
+  assert.equal(connected.turnId, turn.turnId);
+  assert.equal(disconnected.turnId, turn.turnId);
 });

@@ -173,7 +173,11 @@ export function createAgentChessServer({
     now: ticketNow,
     onTurnDelivered: ({ matchId, turn }) => {
       const record = matches.get(matchId);
-      if (record) armDecisionDeadline(record, turn);
+      if (record) {
+        record.session.recordAgentTurnReady(turn.turnId);
+        armDecisionDeadline(record, turn);
+        broadcastState(record);
+      }
     },
   });
   const mcpSessions = new Map();
@@ -484,6 +488,7 @@ export function createAgentChessServer({
       const turn = record.session.createTurnPayload();
       const socket = record.agentSockets.get(seat.color);
       if (socket?.readyState === WebSocket.OPEN) {
+        record.session.recordAgentTurnReady(turn.turnId);
         armDecisionDeadline(record, turn);
         safeSend(socket, turn);
       }

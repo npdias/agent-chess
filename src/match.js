@@ -132,11 +132,26 @@ export class MatchSession {
 
   recordConnectorState(state) {
     if (!['connected', 'disconnected'].includes(state)) throw new Error('INVALID_CONNECTOR_STATE');
+    const turn = this.activeTurn();
     return this._recordActivity({
       type: state === 'connected' ? 'agent.connect' : 'agent.disconnect',
       source: 'system',
       actor: 'connector',
+      turnId: turn?.seatKind === 'agent' ? turn.turnId : null,
       summary: state === 'connected' ? 'Agent connected' : 'Agent disconnected',
+    });
+  }
+
+  recordAgentTurnReady(turnId) {
+    this._assertActiveTurn(turnId);
+    if (this.activeSeat().kind !== 'agent') throw new Error('NOT_AGENT_TURN');
+    return this._recordActivity({
+      type: 'agent.turn.ready',
+      source: 'system',
+      actor: 'connector',
+      phase: 'observe',
+      turnId,
+      summary: 'Agent received turn',
     });
   }
 
