@@ -65,11 +65,14 @@ h1, h2, h3, p { margin-top: 0; }
 .status-line { width: min(100%, 820px); margin: 10px auto 4px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); font-size: .76rem; }
 .status-line span:first-child { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: .66rem; }
 .status-line strong { margin-right: auto; }
-.status-line span:last-child { color: var(--accent-strong); }
+.status-line #phase-current { color: var(--accent-strong); }
+.status-line #turn-timing { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .status-line::before { content: ""; width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--muted-2); box-shadow: 0 0 0 4px #707a7218; }
 .status-line[data-state="thinking"]::before, .status-line[data-state="your-turn"]::before { background: var(--accent); box-shadow: 0 0 0 4px #81b64c20; }
 .status-line[data-state="moving"]::before { background: #b8c4b4; box-shadow: 0 0 0 4px #b8c4b418; }
 .status-line[data-state="waiting"] strong { color: #ddc979; }
+.status-line[data-state="failed"]::before, .status-line[data-state="disconnected"]::before, .status-line[data-state="unavailable"]::before { background: var(--danger); box-shadow: 0 0 0 4px #b6504d22; }
+.status-line[data-state="stale"]::before, .status-line[data-state="offline"]::before, .status-line[data-state="aborted"]::before { background: #ddc979; box-shadow: 0 0 0 4px #ddc97922; }
 .player-strip { width: min(100%, 820px); min-height: 62px; margin: auto; display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
 .player-identity, .player-meta { display: flex; align-items: center; gap: 11px; }
 .player-identity small, .rating-label { display: block; color: var(--muted); font-size: .72rem; margin-top: 3px; }
@@ -264,6 +267,9 @@ dialog::backdrop { background: #0009; }
   .match-active .top-actions { display: none; }
   .match-context { gap: 4px; }
   .match-context h1 { font-size: .95rem; }
+  .status-line { flex-wrap: wrap; gap: 5px 8px; }
+  .status-line strong { margin-right: 0; }
+  .status-line #turn-timing { width: 100%; padding-left: 17px; }
   .context-actions { flex-direction: row; align-items: center; }
   .context-actions #focus-mode { display: none; }
   .context-actions #match-tools-button { min-width: 44px; }

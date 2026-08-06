@@ -163,6 +163,7 @@ export function createAgentChessServer({
   onStaticReadFailure = (details) => console.warn('STATIC_ASSET_READ_RETRY', details),
   ticketNow = () => Date.now(),
   waitForTurnTransition = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  observerHeartbeatMs = 5_000,
   allowRemote = process.env.AGENT_CHESS_ALLOW_REMOTE === '1',
 } = {}) {
   const matches = new Map();
@@ -172,7 +173,11 @@ export function createAgentChessServer({
     now: ticketNow,
     onTurnDelivered: ({ matchId, turn }) => {
       const record = matches.get(matchId);
-      if (record) armDecisionDeadline(record, turn);
+      if (record) {
+        record.session.recordAgentTurnReady(turn.turnId);
+        armDecisionDeadline(record, turn);
+        broadcastState(record);
+      }
     },
   });
   const mcpSessions = new Map();
@@ -419,8 +424,8 @@ export function createAgentChessServer({
     turn.deadlineMs = record.decisionDeadlineMs;
     record.decisionTimer = setTimeout(() => {
       if (record.session.activeTurn()?.turnId !== turn.turnId || record.session.isTerminal()) return;
-      record.session.fail('AGENT_FAILURE', 'Decision deadline exceeded');
-      signalFailure(record, 'AGENT_FAILURE', 'Agent decision deadline exceeded');
+      record.session.fail('AGENT_DECISION_TIMEOUT', 'Decision deadline exceeded');
+      signalFailure(record, 'AGENT_DECISION_TIMEOUT', 'Agent decision deadline exceeded');
       emitTerminal(record);
     }, record.decisionDeadlineMs);
   }
@@ -483,6 +488,7 @@ export function createAgentChessServer({
       const turn = record.session.createTurnPayload();
       const socket = record.agentSockets.get(seat.color);
       if (socket?.readyState === WebSocket.OPEN) {
+        record.session.recordAgentTurnReady(turn.turnId);
         armDecisionDeadline(record, turn);
         safeSend(socket, turn);
       }
@@ -633,7 +639,14 @@ export function createAgentChessServer({
 
   eventWss.on('connection', (socket, request, record) => {
     record.observers.add(socket);
-    socket.on('close', () => record.observers.delete(socket));
+    const heartbeatTimer = setInterval(() => {
+      safeSend(socket, { type: MESSAGE_TYPES.HEARTBEAT, matchId: record.session.id, at: new Date().toISOString() });
+    }, Math.max(10, observerHeartbeatMs));
+    heartbeatTimer.unref?.();
+    socket.on('close', () => {
+      clearInterval(heartbeatTimer);
+      record.observers.delete(socket);
+    });
     safeSend(socket, { type: MESSAGE_TYPES.STATE, match: publicSnapshot(record) });
   });
 

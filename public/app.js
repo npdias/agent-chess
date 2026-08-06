@@ -59,9 +59,14 @@ const DISCLOSURE_LABELS = {
 
 const BOARD_SETTLE_MS = 460;
 const CAPTURE_FADE_MS = 300;
+const AGENT_ACTIVITY_STALE_MS = 30_000;
+const OBSERVER_HEARTBEAT_STALE_MS = 15_000;
 
 export function deriveTurnPhase(match = {}) {
   if (match.game?.gameOver || ['completed', 'aborted', 'failed'].includes(match.status)) return { key: 'complete', label: 'Match complete' };
+  if (activeTurnSeat(match).kind === 'agent' && !currentTurnEntries(match).some((entry) => entry?.type === 'agent.turn.ready')) {
+    return { key: 'waiting', label: 'Waiting for agent' };
+  }
   const entries = activeTurnActivity(match);
   const entry = [...entries].reverse().find((item) => TURN_PHASES.some((phase) => (
     phase.key === (PHASE_ALIASES[item?.phase] ?? item?.phase)
@@ -83,11 +88,138 @@ export function derivePhaseEvidence(match = {}) {
     .filter((key) => TURN_PHASES.some((phase) => phase.key === key)));
 }
 
+function timestampMs(value) {
+  const parsed = Date.parse(value ?? '');
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatTurnDuration(milliseconds) {
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return null;
+  const seconds = milliseconds / 1000;
+  return `${seconds.toFixed(seconds % 1 ? 1 : 0)}s`;
+}
+
+function activeTurnId(match = {}) {
+  return match.activeTurn?.turnId
+    ?? [...(match.activity ?? [])].reverse().find((entry) => entry?.type === 'turn.start')?.turnId
+    ?? null;
+}
+
+function currentTurnEntries(match = {}) {
+  const turnId = activeTurnId(match);
+  return turnId ? (match.activity ?? []).filter((entry) => entry?.turnId === turnId) : [];
+}
+
+function activeTurnSeat(match = {}) {
+  return match.seats?.[match.activeTurn?.activeColor ?? match.game?.turn] ?? {};
+}
+
+function agentTurnElapsed(entries, endAt, connectedAtEnd) {
+  let elapsed = 0;
+  let segmentStartedAt = null;
+  let delivered = false;
+  for (const entry of [...entries].sort((left, right) => timestampMs(left.at) - timestampMs(right.at))) {
+    const at = timestampMs(entry.at);
+    if (at === null || at > endAt) continue;
+    if (entry.type === 'agent.turn.ready') {
+      delivered = true;
+      if (segmentStartedAt === null) segmentStartedAt = at;
+      continue;
+    }
+    if (entry.type === 'agent.disconnect' && segmentStartedAt !== null) {
+      elapsed += Math.max(0, at - segmentStartedAt);
+      segmentStartedAt = null;
+    }
+  }
+  if (segmentStartedAt !== null && connectedAtEnd) elapsed += Math.max(0, endAt - segmentStartedAt);
+  return delivered ? elapsed : null;
+}
+
+export function deriveTurnTiming(match = {}, now = Date.now()) {
+  const activity = match.activity ?? [];
+  const currentTurnId = activeTurnId(match);
+  const currentStart = currentTurnId
+    ? [...activity].reverse().find((entry) => entry?.type === 'turn.start' && entry.turnId === currentTurnId)
+    : null;
+  const currentStartedAt = timestampMs(currentStart?.at);
+  const activeSeat = activeTurnSeat(match);
+  const agentTurn = activeSeat.kind === 'agent';
+  const agentAvailable = Boolean(match.connected || match.agentSessionActive);
+  const currentEntries = currentTurnEntries(match);
+  const currentMs = terminalMatch(match) || currentStartedAt === null ? null
+    : agentTurn ? agentTurnElapsed(currentEntries, now, agentAvailable)
+      : Math.max(0, now - currentStartedAt);
+  const completedMove = [...activity].reverse().find((entry) => entry?.type === 'move.submit' && timestampMs(entry.at) !== null);
+  const completedStart = completedMove
+    ? [...activity].reverse().find((entry) => entry?.type === 'turn.start' && entry.turnId === completedMove.turnId)
+    : null;
+  const completedStartedAt = timestampMs(completedStart?.at);
+  const completedAt = timestampMs(completedMove?.at);
+  const completedEntries = completedMove?.turnId
+    ? activity.filter((entry) => entry?.turnId === completedMove.turnId)
+    : [];
+  const completedAgentTurn = completedEntries.some((entry) => entry?.type === 'agent.turn.ready');
+  const lastMs = completedStartedAt === null || completedAt === null ? null
+    : completedAgentTurn ? agentTurnElapsed(completedEntries, completedAt, true)
+      : Math.max(0, completedAt - completedStartedAt);
+  const currentLabel = currentMs === null
+    ? agentTurn && !agentAvailable ? 'Waiting for agent connection' : 'Current turn time unavailable'
+    : agentTurn && !agentAvailable ? `Agent disconnected · ${formatTurnDuration(currentMs)} elapsed` : `Current turn ${formatTurnDuration(currentMs)}`;
+  return {
+    currentMs,
+    lastMs,
+    currentLabel,
+    lastLabel: lastMs === null ? 'Last turn time unavailable' : `Last turn ${formatTurnDuration(lastMs)}`,
+  };
+}
+
+export function deriveLiveStatus(match = {}, { now = Date.now(), observer = {} } = {}) {
+  if (terminalMatch(match)) {
+    if (match.status === 'failed') {
+      if (match.failureCode === 'AGENT_DECISION_TIMEOUT') return { state: 'failed', title: 'Agent decision timed out', detail: 'Server ended this match after its decision deadline.' };
+      if (match.failureCode === 'ENGINE_FAILURE') return { state: 'failed', title: 'Evaluator failed', detail: 'Server ended this match after evaluator failure.' };
+      return { state: 'failed', title: 'Match failed', detail: match.failureCode ? `Failure code: ${match.failureCode}` : 'Server reported a terminal failure.' };
+    }
+    if (match.status === 'aborted') {
+      const aborted = [...(match.activity ?? [])].reverse().find((entry) => entry?.type === 'match.abort');
+      return { state: 'aborted', title: 'Match aborted', detail: aborted?.summary || 'A player aborted before play began.' };
+    }
+    const outcome = deriveOutcome(match);
+    return { state: 'complete', title: outcome.headline, detail: outcome.secondary };
+  }
+  if (observer.state === 'disconnected') return { state: 'disconnected', title: 'Live updates disconnected', detail: 'Last known game state is shown.' };
+  const lastSignalAt = Number.isFinite(observer.lastSignalAt) ? observer.lastSignalAt : null;
+  if (lastSignalAt !== null && now - lastSignalAt > OBSERVER_HEARTBEAT_STALE_MS) {
+    return { state: 'unavailable', title: 'Live status unavailable', detail: 'No server heartbeat received. Last known game state is shown.' };
+  }
+  const owner = deriveTurnOwnerStatus(match, null);
+  const activeSeat = match.seats?.[match.game?.turn] ?? {};
+  const turnDelivered = currentTurnEntries(match).some((entry) => entry?.type === 'agent.turn.ready');
+  if (activeSeat.kind === 'agent' && !turnDelivered) {
+    if (!match.connected && !match.agentSessionActive) {
+      return { state: 'offline', title: `Waiting on ${activeSeat.name ?? 'agent'}`, detail: 'Invite remains unclaimed. Timer starts after agent receives this turn.' };
+    }
+    return { state: 'offline', title: `Waiting on ${activeSeat.name ?? 'agent'}`, detail: 'Agent session is active; server has not delivered this turn yet.' };
+  }
+  if (activeSeat.kind === 'agent' && !match.connected && !match.agentSessionActive) {
+    return { state: 'offline', title: `${activeSeat.name ?? 'Agent'} disconnected`, detail: 'Turn timer is paused until agent reconnects and receives this turn.' };
+  }
+  const latestActivity = [...currentTurnEntries(match)].reverse().find((entry) => timestampMs(entry.at) !== null);
+  const latestActivityAt = timestampMs(latestActivity?.at);
+  if (activeSeat.kind === 'agent' && latestActivityAt !== null && now - latestActivityAt > AGENT_ACTIVITY_STALE_MS) {
+    const seconds = Math.floor((now - latestActivityAt) / 1000);
+    const sessionState = match.connected ? 'Connection remains open.' : 'Agent session remains active.';
+    return { state: 'stale', title: 'Agent status not confirmed', detail: `No public activity for ${seconds}s. ${sessionState}` };
+  }
+  return { state: owner.state, title: owner.headline, detail: owner.detail };
+}
+
 export function formatActivity(entry = {}) {
   const source = ['agent', 'connector', 'system'].includes(entry.actor ?? entry.source) ? (entry.actor ?? entry.source) : 'system';
   const agent = source === 'agent';
   const typeLabels = {
     'turn.start': 'Position received',
+    'agent.turn.ready': 'Agent turn ready',
     'moves.list': 'Piece moves checked',
     'moves.list_all': 'Legal moves checked',
     'history.list': 'History checked',
@@ -280,6 +412,8 @@ export function deriveTurnOwnerStatus(match = {}, ownedColor = null) {
   const seat = match.seats?.[activeColor] ?? {};
   const name = seat.name ?? (activeColor ? `${activeColor[0].toUpperCase()}${activeColor.slice(1)}` : 'Player');
   if (seat.kind === 'agent') {
+    const delivered = currentTurnEntries(match).some((entry) => entry?.type === 'agent.turn.ready');
+    if (!delivered) return { headline: `Waiting on ${name}`, detail: match.connected || match.agentSessionActive ? 'Waiting for turn delivery' : 'Agent needs to connect', state: 'waiting', activeColor };
     return match.connected || match.agentSessionActive
       ? { headline: `${name} is thinking`, detail: deriveTurnPhase(match).label, state: 'thinking', activeColor }
       : { headline: `Waiting on ${name}`, detail: 'Agent needs to connect', state: 'waiting', activeColor };
@@ -298,7 +432,10 @@ export function derivePlayerState(match = {}, color, ownedColor = null) {
   }
   if (match.game?.turn !== color) return 'Watching';
   const seat = match.seats?.[color] ?? {};
-  if (seat.kind === 'agent') return match.connected || match.agentSessionActive ? 'Thinking' : 'Connecting';
+  if (seat.kind === 'agent') {
+    if (!currentTurnEntries(match).some((entry) => entry?.type === 'agent.turn.ready')) return 'Waiting';
+    return match.connected || match.agentSessionActive ? 'Thinking' : 'Connecting';
+  }
   if (seat.kind === 'engine') return 'Moving';
   if (seat.kind === 'human') return color === ownedColor ? 'Your move' : 'To move';
   return 'To move';
@@ -509,6 +646,7 @@ let previousLiveFen = null;
 let boardAnimationTimer = null;
 let boardAnimationActive = false;
 let queuedBoardMatch = null;
+let liveObserver = { state: 'unknown', lastSignalAt: null };
 
 function toast(message) {
   const node = qs('toast');
@@ -776,11 +914,13 @@ function renderDecisionBrief(match) {
 }
 
 function renderStatusLine(match) {
-  const owner = deriveTurnOwnerStatus(match, ownedControllerColor);
-  qs('status-kicker').textContent = owner.state === 'complete' ? 'Match status' : 'Current turn';
-  qs('status-title').textContent = owner.headline;
-  qs('phase-current').textContent = owner.detail;
-  qs('status-line').dataset.state = owner.state;
+  const status = deriveLiveStatus(match, { observer: liveObserver });
+  const timing = deriveTurnTiming(match);
+  qs('status-kicker').textContent = ['complete', 'failed', 'aborted'].includes(status.state) ? 'Match status' : 'Current turn';
+  qs('status-title').textContent = status.title;
+  qs('phase-current').textContent = status.detail;
+  qs('turn-timing').textContent = `${timing.currentLabel} · ${timing.lastLabel}`;
+  qs('status-line').dataset.state = status.state;
 }
 
 function renderReview(match, summary) {
@@ -933,13 +1073,22 @@ async function loadMatch(matchId) {
   humanColor = match.seats?.[ownedControllerColor]?.kind === 'human' ? ownedControllerColor : null;
   humanCapability = humanColor && sessionStorage.getItem(`${matchId}:capability:${humanColor}`);
   if (ownedControllerColor) boardFlipped = ownedControllerColor === 'black';
+  liveObserver = { state: 'connected', lastSignalAt: Date.now() };
   render(match);
   eventSocket?.close();
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  eventSocket = new WebSocket(`${protocol}//${location.host}/events?matchId=${encodeURIComponent(matchId)}`);
-  eventSocket.addEventListener('message', (event) => {
+  const socket = eventSocket = new WebSocket(`${protocol}//${location.host}/events?matchId=${encodeURIComponent(matchId)}`);
+  socket.addEventListener('message', (event) => {
+    if (eventSocket !== socket) return;
     const message = JSON.parse(event.data);
+    liveObserver = { state: 'connected', lastSignalAt: Date.now() };
     if (message.type === 'match.state') render(message.match);
+    else if (message.type === 'match.heartbeat' && currentMatch) renderStatusLine(currentMatch);
+  });
+  socket.addEventListener('close', () => {
+    if (eventSocket !== socket) return;
+    liveObserver = { ...liveObserver, state: 'disconnected' };
+    if (currentMatch) renderStatusLine(currentMatch);
   });
 }
 
@@ -995,6 +1144,7 @@ export function shellQuote(value) {
 }
 
 function boot() {
+  setInterval(() => { if (currentMatch) renderStatusLine(currentMatch); }, 1_000);
   qs('create-match').addEventListener('submit', createMatch);
   qs('steering-form').addEventListener('submit', sendSteering);
   qs('matchup').addEventListener('change', (event) => {
